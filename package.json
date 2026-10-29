@@ -1,0 +1,24 @@
+{
+  "name": "hams-tavern",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hams Tavern: The Bells of Lahti — a solo fantasy RPG with an offline game master.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  },
+  "dependencies": {
+    "@fontsource/alegreya": "^5.1.0",
+    "@fontsource/ibm-plex-mono": "^5.1.0",
+    "@fontsource/im-fell-english": "^5.1.0"
+  }
+}

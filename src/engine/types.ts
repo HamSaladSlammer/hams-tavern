@@ -1,0 +1,219 @@
+import type { Rng } from './dice';
+
+export type Ability = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
+export const ABILITIES: Ability[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+export type Abilities = Record<Ability, number>;
+
+export type Skill =
+  | 'acrobatics' | 'animal handling' | 'arcana' | 'athletics' | 'deception' | 'history'
+  | 'insight' | 'intimidation' | 'investigation' | 'medicine' | 'nature' | 'perception'
+  | 'performance' | 'persuasion' | 'religion' | 'sleight of hand' | 'stealth' | 'survival';
+
+export const SKILL_ABILITY: Record<Skill, Ability> = {
+  acrobatics: 'dex', 'animal handling': 'wis', arcana: 'int', athletics: 'str', deception: 'cha',
+  history: 'int', insight: 'wis', intimidation: 'cha', investigation: 'int', medicine: 'wis',
+  nature: 'int', perception: 'wis', performance: 'cha', persuasion: 'cha', religion: 'int',
+  'sleight of hand': 'dex', stealth: 'dex', survival: 'wis',
+};
+
+export type DamageType =
+  | 'bludgeoning' | 'piercing' | 'slashing' | 'fire' | 'cold' | 'necrotic' | 'radiant'
+  | 'force' | 'poison' | 'psychic' | 'thunder' | 'lightning' | 'acid';
+
+export type WeaponCategory = 'simple' | 'martial' | 'firearm';
+
+export interface WeaponDef {
+  id: string;
+  name: string;
+  category: WeaponCategory;
+  ranged: boolean;
+  damage: string; // e.g. "1d8"
+  dtype: DamageType;
+  finesse?: boolean;
+  light?: boolean;
+  thrown?: boolean;
+  twoHanded?: boolean;
+  range?: [number, number];
+  ammo?: 'pistol' | 'rifle' | 'arrow' | 'bolt';
+  capacity?: number; // firearms: rounds before reload
+  silvered?: boolean;
+  bonus?: number; // magic +N
+  price: number; // copper
+}
+
+export interface ArmorDef {
+  id: string;
+  name: string;
+  base: number;
+  dexCap: number | null; // null = full dex, 0 = none
+  kind: 'light' | 'medium' | 'heavy' | 'shield';
+  stealthDis?: boolean;
+  price: number;
+}
+
+export type ItemKind = 'weapon' | 'armor' | 'potion' | 'ammo' | 'gear' | 'key' | 'treasure' | 'food' | 'note';
+
+export interface ItemDef {
+  id: string;
+  name: string;
+  kind: ItemKind;
+  price: number; // copper; 0 = cannot be sold
+  desc: string;
+  weapon?: WeaponDef;
+  armor?: ArmorDef;
+  heal?: string; // potion dice
+  ammoFor?: 'pistol' | 'rifle' | 'arrow' | 'bolt';
+  read?: string; // text when read
+  aliases?: string[];
+  acBonus?: number; // e.g. robe of protection
+  saveBonus?: number;
+}
+
+export interface Stack {
+  id: string;
+  qty: number;
+}
+
+export interface Attack {
+  name: string;
+  toHit: number;
+  damage: string;
+  dtype: DamageType;
+  extra?: { damage: string; dtype: DamageType };
+  ranged?: boolean;
+  verb?: string; // narration verb
+}
+
+export interface MonsterDef {
+  id: string;
+  name: string;
+  plural?: string;
+  ac: number;
+  hp: string; // dice expr
+  speed: number;
+  abilities: Abilities;
+  attacks: Attack[];
+  tags: string[]; // undead, beast, humanoid, construct
+  xp: number;
+  resist?: DamageType[];
+  vulnerable?: DamageType[];
+  immune?: DamageType[];
+  traits?: string[]; // 'undead fortitude', 'pack tactics', 'sunlight'
+  desc: string;
+  aliases?: string[];
+  surrenderAt?: number; // hp threshold
+}
+
+export type Condition = 'prone' | 'unconscious' | 'stable' | 'dead' | 'frightened' | 'dodging' | 'grappled' | 'surrendered' | 'fled' | 'hidden' | 'blessed' | 'shielded' | 'guided' | 'taunted';
+
+export interface Combatant {
+  key: string; // unique in fight
+  name: string;
+  side: 'party' | 'foe';
+  monster?: string; // MonsterDef id
+  isPc?: boolean;
+  companion?: string; // companion id
+  hp: number;
+  maxHp: number;
+  ac: number;
+  init: number;
+  conditions: Condition[];
+  jammed?: boolean;
+  ammoLoaded?: number;
+  deathSaves?: { ok: number; fail: number };
+  tauntedBy?: string;
+}
+
+export interface Combat {
+  round: number;
+  order: string[]; // keys
+  turn: number; // index into order
+  units: Combatant[];
+  encounterId: string;
+  usedBonus: boolean;
+  usedAction: boolean;
+  sneakUsed: boolean;
+  fleeTo?: string;
+}
+
+export interface SpellSlots {
+  max: number;
+  used: number;
+}
+
+export interface Character {
+  name: string;
+  species: string;
+  cls: string;
+  background: string;
+  level: number;
+  xp: number;
+  abilities: Abilities;
+  hp: number;
+  maxHp: number;
+  tempHp: number;
+  hitDice: number; // remaining
+  skills: Skill[];
+  expertise: Skill[];
+  saves: Ability[];
+  weaponProf: WeaponCategory[];
+  armorProf: ('light' | 'medium' | 'heavy' | 'shield')[];
+  cantrips: string[];
+  spells: string[];
+  slots: SpellSlots; // level-1 slots only in v0.1
+  resources: Record<string, { max: number; used: number; per: 'short' | 'long' }>;
+  inventory: Stack[];
+  equipped: { main?: string; offhand?: string; armor?: string; shield?: string; ranged?: string; worn: string[] };
+  ammo: Record<string, number>; // loaded rounds per firearm id
+  copper: number;
+  conditions: Condition[];
+  deathSaves: { ok: number; fail: number };
+  pronoun: 'he' | 'she' | 'they';
+}
+
+export interface NpcMemory {
+  disposition: number; // -5..+5
+  insults: number;
+  banned: boolean;
+  met: boolean;
+  topicsSeen: string[];
+}
+
+export interface LogLine {
+  k: 'narr' | 'say' | 'you' | 'roll' | 'sys' | 'hit' | 'miss' | 'good' | 'bad' | 'title';
+  t: string;
+  who?: string;
+}
+
+export type Phase = 'title' | 'create' | 'play' | 'end';
+
+export interface Creation {
+  step: 'name' | 'species' | 'class' | 'background' | 'confirm';
+  name?: string;
+  species?: string;
+  cls?: string;
+  background?: string;
+}
+
+export interface GameState {
+  version: number;
+  rng: Rng;
+  phase: Phase;
+  creation: Creation;
+  pc: Character | null;
+  loc: string;
+  minutes: number; // minutes since campaign start (May 1, 08:00 = 0)
+  flags: Record<string, number | string | boolean>;
+  npc: Record<string, NpcMemory>;
+  companions: string[]; // ids of companions in party
+  companionHp: Record<string, number>;
+  combat: Combat | null;
+  roomFoes: Record<string, { key: string; monster: string; hp: number; conditions: Condition[]; name: string }[]>;
+  roomItems: Record<string, Stack[]>;
+  talkingTo: string | null;
+  lastTarget: string | null;
+  chaos: number;
+  log: LogLine[];
+  journal: string[];
+  stats: { kills: number; knockouts: number; insults: number };
+}
