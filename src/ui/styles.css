@@ -222,3 +222,5 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .wm-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .wm-actions button { flex: 1; min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink); font: inherit; }
 .wm-actions button.primary { background: var(--accent); border-color: var(--accent); color: #1a1209; font-weight: 600; }
+.slots { display: flex; flex-direction: column; gap: 8px; width: 100%; margin: 4px 0 8px; }
+.slot { background: var(--bg2); border: 1px solid var(--line); color: var(--soft); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: .9em; text-align: left; }

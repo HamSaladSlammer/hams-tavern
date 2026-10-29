@@ -143,6 +143,26 @@ describe('the open world', () => {
     clean();
   });
 
+  it('hire a sellsword in an inn; they fight with you, get paid daily, and can be dismissed', () => {
+    const s = hero('wizard', 44, 4);
+    s.pc!.copper = 50000;
+    play(s, ['hirelings', 'hire a sellsword', 'hire a rifleman', 'hire a brawler']);
+    expect(s.world.hires!.length).toBe(2);
+    expect(s.companions.length).toBe(2);
+    const cash = s.pc!.copper;
+    play(s, ['sleep']);
+    expect(s.pc!.copper).toBeLessThan(cash);
+    const back = migrate(JSON.parse(JSON.stringify(s)))!;
+    expect(back.world.hires!.length).toBe(2);
+    play(s, ['go out']);
+    play(s, ['explore', 'explore', 'explore']);
+    if (s.combat) expect(s.combat.units.filter((u) => u.side === 'party').length).toBeGreaterThanOrEqual(3);
+    fightOut(s);
+    play(s, [`dismiss ${s.world.hires![0].name}`]);
+    expect(s.world.hires!.length).toBe(1);
+    clean();
+  });
+
   it('every POI has a sensible place on the map', () => {
     for (const p of POIS) { expect(p.x).toBeGreaterThan(0); expect(p.x).toBeLessThan(1); expect(p.y).toBeGreaterThan(0); expect(p.y).toBeLessThan(1); }
   });

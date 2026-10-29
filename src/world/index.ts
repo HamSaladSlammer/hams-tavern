@@ -1,7 +1,7 @@
 // The open world: travel across Jared's map of Lahti, discovery, rumours, notice-board jobs,
 // threats that advance on their own, the story beyond the bells, and property you can own.
 import type { Ctx, Room } from '../content/types';
-import type { GameState, Job, Property, SiteState, WorldState, Front } from '../engine/types';
+import type { GameState, Job, Property, SiteState, WorldState, Front, Hire, DamageType } from '../engine/types';
 import { ROOMS } from '../content/world';
 import { NPCS } from '../content/npcs';
 import { MAPS } from '../content/maps';
@@ -9,6 +9,7 @@ import { MONSTERS, ITEMS } from '../engine/srd';
 import { die, next, pick } from '../engine/dice';
 import { fmtMoney, hasItem } from '../engine/character';
 import { maybeLevel } from '../content/npcs';
+import { COMPANIONS } from '../engine/combat';
 import { TOWNS, POIS, ROADS, townById, poiById, regionAt, daysBetween, type Loc, type Poi } from './atlas';
 import { ensureTown, bindTownHooks, townHub, townOfRoom } from './towns';
 import { ensureSiteRooms, siteName, siteHub, registerStory, buildFoes, THEMES, type StorySite } from './sites';
@@ -412,7 +413,7 @@ export function townArrive(c: Ctx, town: string) {
     j.paid = true; c.money(j.reward); w.renown += 2;
     c.good(`The town clerk pays out on "${j.title}": ${fmtMoney(j.reward)}.${j.kind === 'fetch' ? ' The family weeps over what you brought back.' : ''}`);
   }
-  if (c.s.world.properties.some((p) => p.town === town)) c.sys('Your property here is just off the square. ("go to my property")');
+  if (c.s.world.properties.some((p) => p.town === town) && c.flag(`prop_hint_${town}`) !== dayOf(c.s)) { c.set(`prop_hint_${town}`, dayOf(c.s)); c.sys('Your property here is just off the square. ("go to my property")'); }
 }
 
 // ---------- fronts: threats that move without you ----------
@@ -429,6 +430,7 @@ export function onNewDay(c: Ctx) {
     omen(c, f);
   }
   propertyTick(c);
+  payHires(c);
   // Act Two begins the morning after Act One ends
   if (c.flag('act1_finale') && !c.flag('act2_letter') && day > ((c.flag('act1_day') as number) ?? day)) act2Letter(c);
   if (c.flag('act1_finale') && !c.flag('act1_day')) c.set('act1_day', day);
@@ -765,6 +767,66 @@ export function sellProperty(c: Ctx) {
   c.move(townHub(p.town));
 }
 
+// ---------- hirelings ----------
+const HIRE_ROLES: Record<string, { label: string; ac: number; hpPer: number; dmg: (l: number) => string; dtype: DamageType; dex: number; verb: string; look: string; lines: string[] }> = {
+  sellsword: { label: 'sellsword', ac: 16, hpPer: 9, dmg: (l) => `${1 + Math.floor(l / 5)}d8+3`, dtype: 'slashing', dex: 1, verb: 'hacks at', look: 'A veteran in a patched army coat, with a sword that has been sharpened so often it is thinner than it should be.', lines: ['"I fought at Greymarch. I don\'t talk about Greymarch."', '"Pay on time and point me at things. That\'s the whole arrangement."', '"Did you hear that? No? Good."'] },
+  rifleman: { label: 'rifleman', ac: 14, hpPer: 7, dmg: (l) => `${1 + Math.floor(l / 5)}d10+2`, dtype: 'piercing', dex: 3, verb: 'shoots', look: 'A lean ex-sniper with a Mosin across their back and a habit of choosing the high ground.', lines: ['"I don\'t miss. I mean, I do, but not twice."', '"Keep them off me and I\'ll keep them off you."', '"Smells like rain. Rain\'s good. Hides the shot."'] },
+  hedge_mage: { label: 'hedge-mage', ac: 12, hpPer: 6, dmg: (l) => `${1 + Math.floor(l / 4)}d10`, dtype: 'fire', dex: 2, verb: 'throws fire at', look: 'A charmwright with singed eyebrows, bone charms clicking at the wrists, and a firm opinion about everything.', lines: ['"Don\'t touch the charms. That one bites."', '"The dead hate fire. Everyone hates fire. That\'s why it works."', '"My mother carved wards for the whole Thornwood. I set things alight. We\'re both proud."'] },
+  brawler: { label: 'brawler', ac: 13, hpPer: 11, dmg: (l) => `${1 + Math.floor(l / 5)}d6+4`, dtype: 'bludgeoning', dex: 1, verb: 'clobbers', look: 'An orc dockhand with knuckles like walnuts and a laugh you can hear across a harbour.', lines: ['"Hit first. Ask later. Ask what? Doesn\'t matter."', '"I like you. You don\'t talk much. Wait, you talk a lot."', '"Buy me a drink after and we\'re square."'] },
+};
+const HIRE_FIRST = ['Bram', 'Ilka', 'Dov', 'Senna', 'Kasimir', 'Rook', 'Jana', 'Otto', 'Mira', 'Tobiah', 'Wren', 'Grisha'];
+
+function registerHire(h: Hire) {
+  const r = HIRE_ROLES[h.kind] ?? HIRE_ROLES.sellsword;
+  COMPANIONS[h.id] = { id: h.id, name: h.name, ac: r.ac + Math.floor(h.level / 6), maxHp: 8 + r.hpPer * h.level, toHit: 3 + Math.ceil(h.level / 2), damage: r.dmg(h.level), dtype: r.dtype, dex: r.dex, verb: r.verb };
+  NPCS[h.id] = { id: h.id, name: h.name, names: [h.name.toLowerCase(), r.label, h.kind.replace('_', ' '), 'hireling', 'merc', 'mercenary'], short: `your hired ${r.label}`, look: () => r.look,
+    greet: (c: Ctx) => c.say(h.id, pick(c.rng, r.lines)),
+    topics: [
+      { id: 'story', keys: ['story', 'past', 'yourself', 'background', 'war', 'who are you'], say: (c: Ctx) => c.say(h.id, pick(c.rng, r.lines)) },
+      { id: 'pay', keys: ['pay', 'wage', 'money', 'contract', 'coin'], say: (c: Ctx) => c.say(h.id, `"${fmtMoney(h.wage)} a day, paid at dawn. Miss a day and I walk."`) },
+    ],
+    unknown: ['"Not my department."', 'They shrug and check their weapon.'] } as unknown as typeof NPCS[string];
+}
+
+export function hireMerc(c: Ctx, what: string) {
+  const w = W(c);
+  w.hires ??= [];
+  const kind = /rifle|sniper|shoot|gun/.test(what) ? 'rifleman' : /mage|wizard|charm|caster|witch/.test(what) ? 'hedge_mage' : /brawl|orc|muscle|fist/.test(what) ? 'brawler' : /sell|sword|merc|fighter|guard|blade|soldier|warrior|help|companion/.test(what) ? 'sellsword' : '';
+  if (!kind) { c.out('title', 'Hirelings for hire'); for (const r of Object.values(HIRE_ROLES)) c.narr(`• ${r.label}: ${r.look} (${fmtMoney(60 * c.pc.level)} a day, plus ${fmtMoney(300 * c.pc.level)} to sign)`); c.sys('Say "hire a sellsword" (or rifleman, hedge-mage, brawler). You can keep two.'); return; }
+  if (w.hires.length >= 2) { c.sys('You already have two hirelings. ("dismiss <name>" first.)'); return; }
+  const sign = 300 * c.pc.level;
+  if (!c.pay(sign)) { c.bad(`They want ${fmtMoney(sign)} to sign on. You're short.`); return; }
+  const id = `hire_${w.nextId++}`;
+  const used = new Set(w.hires.map((h) => h.name.split(' ')[0]));
+  const first = pick(c.rng, HIRE_FIRST.filter((n) => !used.has(n)));
+  const h: Hire = { id, name: first, role: HIRE_ROLES[kind].label, kind, level: c.pc.level, wage: 60 * c.pc.level, since: dayOf(c.s) };
+  w.hires.push(h);
+  registerHire(h);
+  c.addCompanion(id);
+  c.s.companionHp[id] = COMPANIONS[id].maxHp;
+  c.good(`${first} the ${h.role} signs on for ${fmtMoney(h.wage)} a day.`);
+  c.say(id, pick(c.rng, HIRE_ROLES[kind].lines));
+}
+
+export function dismiss(c: Ctx, who: string) {
+  const w = W(c);
+  const h = (w.hires ?? []).find((x) => who.toLowerCase().includes(x.name.toLowerCase()) || who.toLowerCase().includes(x.role));
+  if (!h) return false;
+  w.hires = w.hires!.filter((x) => x !== h);
+  c.s.companions = c.s.companions.filter((x) => x !== h.id);
+  c.narr(`${h.name} shakes your hand, counts their pay twice, and goes.`);
+  return true;
+}
+
+function payHires(c: Ctx) {
+  const w = W(c);
+  for (const h of [...(w.hires ?? [])]) {
+    if (!c.s.companions.includes(h.id)) { w.hires = w.hires!.filter((x) => x !== h); continue; }
+    if (c.pc.level > h.level) { h.level = c.pc.level; registerHire(h); }
+    if (!c.pay(h.wage)) { w.hires = w.hires!.filter((x) => x !== h); c.s.companions = c.s.companions.filter((x) => x !== h.id); c.bad(`You couldn't pay ${h.name}. They leave before breakfast.`); }
+  }
+}
+
 // ---------- view for the UI ----------
 export interface WorldPin { id: string; name: string; x: number; y: number; kind: 'town' | 'site' | 'story' | 'here' | 'property'; visited?: boolean; cleared?: boolean; level?: number; blurb?: string; days?: number }
 export interface WorldViewData { pins: WorldPin[]; here: { x: number; y: number } | null; fronts: Front[]; jobs: Job[]; journey: string | null; atName: string; renown: number }
@@ -793,6 +855,7 @@ export function migrateWorld(s: GameState) {
   s.world.properties ??= []; s.world.jobs ??= []; s.world.found ??= []; s.world.visited ??= ['breda']; s.world.sites ??= {}; s.world.renown ??= 0;
   if (s.flags.quest_chapel && !s.world.found.includes('old_chapel')) s.world.found.push('old_chapel');
   for (const pr of s.world.properties) ensureProperty(pr);
+  for (const h of s.world.hires ?? []) registerHire(h);
 }
 
 // ---------- wiring ----------

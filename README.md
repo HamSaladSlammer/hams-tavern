@@ -17,6 +17,8 @@ You can also open the web link in Chrome and choose **Add to Home screen**.
 - **Jobs.** Notice boards post clearing contracts, bounties, recoveries and deliveries. Take one, do it, collect in town.
 - **The story keeps going.** After the chapel, Act Two: three more bell towers (Coltale, Largo, Borschardt), the Old Vaults under Suomi and the Pale Queen herself, then Zenu at the Greenspire, and something worse than a queen under the Mire. Threats advance on their own clock whether you deal with them or not: the bells, a war with Makrovin, the Drinker Below. Type "threats" to see them.
 - **Own a piece of it.** Buy a house, farm, shop, forge or tavern in any town. Name it, build a kitchen, a stage or a still, hire a barkeep, a cook, a bouncer or a bard, work the bar yourself, and collect the takings. Thieves, famous bards, tax men and buyout offers turn up.
+- **Hirelings.** Hire a sellsword, rifleman, hedge-mage or brawler in any inn (up to two). They fight beside you, level with you, and want paying every morning.
+- **Save slots.** Three characters at once, picked from the title screen.
 - **Levels 1 to 20.** Every class to 20 with its features, Extra Attacks, ability score improvements, and three subclasses per class (choose at level 3: "choose Champion"). Spells up to 9th level. A bigger bestiary (ghouls to an adult wyrm) and better loot, including the firearms of the last war.
 
 ## What's new in v0.3

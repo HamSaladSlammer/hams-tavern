@@ -1260,6 +1260,9 @@ function worldCommand(c: Ctx, raw: string): boolean {
     World.buyProperty(c, map[m[1]]); return true;
   }
   if ((m = raw.trim().match(/^(?:name|call|rename) (?:it|this place|the place|my (?:tavern|shop|farm|house|forge|place|property))\s+(?:to\s+)?(.+)$/i))) { if (!s.world.properties.length) return false; World.nameProperty(c, m[1]); return true; }
+  if (!atProp && (m = low.match(/^(?:hire|recruit|employ|sign up|take on)\s+(?:a |an |some |the )?(.*)$/)) && (s.loc === 'tavern' || /:inn$/.test(s.loc) || /sellsword|merc|rifle|mage|brawl|sword|guard|hireling|companion|help/.test(m[1]))) { World.hireMerc(c, m[1] ?? ''); return true; }
+  if ((m = low.match(/^(?:dismiss|fire|let go|release|pay off)\s+(.+)$/)) && World.dismiss(c, m[1])) return true;
+  if (/^(hirelings?|mercenaries|mercs|sellswords?)( for hire)?$/.test(low)) { World.hireMerc(c, ''); return true; }
   if (atProp) {
     if ((m = low.match(/^(?:upgrade|build|improve|add|install)(?:\s+(?:a |an |the )?(.+))?$/))) { World.upgrade(c, m[1] ?? ''); return true; }
     if ((m = low.match(/^(?:hire|employ|recruit)(?:\s+(?:a |an |some )?(.+))?$/))) { World.hire(c, m[1] ?? ''); return true; }

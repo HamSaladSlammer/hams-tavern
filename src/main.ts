@@ -98,7 +98,12 @@ function refresh() {
   input.placeholder = state.combat ? 'Punch, kick, cast, shoot, dodge…' : 'What do you do?';
 }
 
-function save() { try { backend.save(SAVE_KEY, JSON.stringify(state)); } catch { /* full storage: ignore */ } }
+// ---------- save slots ----------
+const SLOTS = 3;
+const slotKey = (i: number) => (i === 0 ? SAVE_KEY : `${SAVE_KEY}.s${i + 1}`);
+let slot = (() => { try { const n = Number(backend.load('hams.slot')); return n >= 0 && n < SLOTS ? n : 0; } catch { return 0; } })();
+function readSlot(i: number): GameState | null { try { const raw = backend.load(slotKey(i)); const g = raw ? migrate(JSON.parse(raw)) : null; return g && g.phase === 'play' && g.pc ? g : null; } catch { return null; } }
+function save() { try { backend.save(slotKey(slot), JSON.stringify(state)); backend.save('hams.slot', String(slot)); } catch { /* full storage: ignore */ } }
 
 function send(text: string) {
   const t = text.trim();
@@ -120,24 +125,46 @@ input.addEventListener('keydown', (e) => {
 
 // ---------- title ----------
 $('ver').textContent = VERSION;
-const saved = (() => { try { const raw = backend.load(SAVE_KEY); return raw ? migrate(JSON.parse(raw)) : null; } catch { return null; } })();
-if (saved && saved.phase === 'play' && saved.pc) $('btn-continue').hidden = false;
-$('btn-continue').onclick = () => {
-  state = saved!;
+function slotLabel(g: GameState) {
+  const pc = g.pc!;
+  const cls = pc.cls.charAt(0).toUpperCase() + pc.cls.slice(1);
+  return `${pc.name} · Lv ${pc.level} ${cls}${pc.subclass ? '' : ''} · ${statusLine(g)?.place ?? ''}`;
+}
+function loadSlot(i: number) {
+  const g = readSlot(i); if (!g) return;
+  slot = i; state = g;
   $('title').hidden = true;
   logEl.innerHTML = '';
   render(state.log.slice(-120), false);
   render([{ k: 'sys', t: 'Welcome back.' }]);
-};
+  save();
+}
+function renderSlots() {
+  const cont = $('btn-continue');
+  const wrap = document.getElementById('slots-list') ?? (() => { const d = document.createElement('div'); d.id = 'slots-list'; d.className = 'slots'; cont.insertAdjacentElement('afterend', d); return d; })();
+  wrap.innerHTML = '';
+  const cur = readSlot(slot);
+  cont.hidden = !cur;
+  if (cur) { cont.textContent = `Continue: ${cur.pc!.name}`; cont.onclick = () => loadSlot(slot); }
+  for (let i = 0; i < SLOTS; i++) {
+    if (i === slot) continue;
+    const g = readSlot(i); if (!g) continue;
+    const b = document.createElement('button'); b.className = 'slot'; b.textContent = slotLabel(g); b.onclick = () => loadSlot(i); wrap.appendChild(b);
+  }
+}
+renderSlots();
 $('btn-new').onclick = () => {
-  if (saved && saved.phase === 'play' && !confirmNew()) return;
+  const empty = Array.from({ length: SLOTS }, (_, i) => i).find((i) => !readSlot(i));
+  if (empty !== undefined) { slot = empty; startNew(); return; }
+  if (!confirmNew()) return;
   startNew();
 };
 function confirmNew(): boolean {
   const b = $('btn-new');
   if (b.dataset.armed) return true;
-  b.dataset.armed = '1'; b.textContent = 'Tap again to overwrite your save';
-  setTimeout(() => { delete b.dataset.armed; b.textContent = 'New game'; }, 4000);
+  const g = readSlot(slot);
+  b.dataset.armed = '1'; b.textContent = `All ${SLOTS} slots are full. Tap again to overwrite ${g?.pc?.name ?? 'this save'}`;
+  setTimeout(() => { delete b.dataset.armed; b.textContent = 'New game'; }, 5000);
   return false;
 }
 function startNew() {
@@ -198,7 +225,7 @@ function menu(body: HTMLElement) {
   body.appendChild(menuButton('How to play', () => { panel.hidden = true; send('help'); }));
   body.appendChild(menuButton('Export save (for bug reports or another device)', exportSave));
   body.appendChild(menuButton('Import save', importSave));
-  body.appendChild(menuButton('Back to title', () => location.reload()));
+  body.appendChild(menuButton('Switch character (save slots)', () => location.reload()));
   const about = document.createElement('div'); about.className = 'small';
   about.innerHTML = `<p><b>Hams Tavern: The Bells of Lahti</b> v${VERSION}. A solo fantasy RPG with an offline game master. World and story © Jared ("HamSaladSlammer").</p>
   <p>This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.</p>
@@ -261,6 +288,7 @@ async function setupNative() {
     const { App } = await import('@capacitor/app');
     App.addListener('backButton', () => {
       if (!panel.hidden) { panel.hidden = true; return; }
+      if (world.isOpen) { world.close(); return; }
       if (!$('forge').hidden) { $('forge').hidden = true; $('title').hidden = false; return; }
       App.minimizeApp();
     });

@@ -264,7 +264,8 @@ export interface Job { id: string; town: string; kind: 'clear' | 'bounty' | 'del
 export interface Front { id: string; name: string; clock: number; max: number; active: boolean; ended?: boolean; lastTick: number; omens: number[] }
 export interface Property { id: string; town: string; type: 'tavern' | 'shop' | 'farm' | 'house' | 'smithy'; name: string; upgrades: string[]; staff: string[]; cash: number; rep: number; lastDay: number; events: number }
 export interface Journey { route: string[]; legs: number[]; leg: number; day: number; dest: string }
-export interface WorldState { at: string; visited: string[]; found: string[]; sites: Record<string, SiteState>; journey: Journey | null; jobs: Job[]; fronts: Record<string, Front>; properties: Property[]; nextId: number; seed: number; renown: number }
+export interface WorldState { at: string; visited: string[]; found: string[]; sites: Record<string, SiteState>; journey: Journey | null; jobs: Job[]; fronts: Record<string, Front>; properties: Property[]; nextId: number; seed: number; renown: number; hires?: Hire[] }
+export interface Hire { id: string; name: string; role: string; level: number; wage: number; since: number; kind: string }
 
 export interface PropState {
   id: string;
