@@ -133,11 +133,13 @@ function squibPayout(c: Ctx) {
 }
 
 export function maybeLevel(c: Ctx) {
-  if (c.pc.level >= 2) return;
-  if (c.pc.xp >= xpToNext(c.pc)) {
-    c.narr('Squib pours you a measure from the black bottle and looks at you properly for the first time. "You\'ve grown," he says.');
+  let first = true;
+  while (c.pc.level < 20 && c.pc.xp >= xpToNext(c.pc)) {
+    if (first && c.pc.level === 1 && c.s.loc === 'tavern' && !c.flag('squib_dead')) c.narr('Squib pours you a measure from the black bottle and looks at you properly for the first time. "You\'ve grown," he says.');
+    else if (first) c.narr(pick(c.rng, ['You wake knowing things your body didn\'t know yesterday.', 'Somewhere in the night, the road finished teaching you something.', 'You feel it settle in your bones: you are more than you were.']));
+    first = false;
     for (const l of levelUp(c.pc)) c.good(l);
-    c.good(`You are now level ${c.pc.level}.`);
+    c.out('title', `Level ${c.pc.level}`);
   }
 }
 

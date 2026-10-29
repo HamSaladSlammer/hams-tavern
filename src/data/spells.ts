@@ -7,7 +7,7 @@ export type SpellKind = 'attack' | 'save' | 'auto' | 'heal' | 'buff' | 'control'
 export interface SpellDef {
   id: string;
   name: string;
-  level: 0 | 1;
+  level: number; // 0 cantrip .. 9
   kind: SpellKind;
   damage?: string;
   dtype?: DamageType;
@@ -15,7 +15,12 @@ export interface SpellDef {
   ranged?: boolean;
   aoe?: number; // max targets
   bonusAction?: boolean;
-  effect?: 'restrained' | 'frightened' | 'charmed' | 'asleep' | 'prone' | 'halted' | 'faerie' | 'mocked' | 'frostbit' | 'pushed';
+  effect?: 'restrained' | 'frightened' | 'charmed' | 'asleep' | 'prone' | 'halted' | 'faerie' | 'mocked' | 'frostbit' | 'pushed' | 'paralyzed' | 'banished';
+  rays?: number; // separate attack rolls
+  area?: 'self' | 'target'; // where an area spell is centred
+  radius?: number; // squares
+  special?: string; // engine hook: teleport, guardians, weapon, haste, invisible, blur, mantle, raise, mass_heal, aid, drain, pwk
+  classes?: string[]; // for spells beyond level 1: which classes learn it
   halfOnSave?: boolean;
   desc: string;
   aliases: string[];
@@ -79,3 +84,6 @@ export const SPELLS: Record<string, SpellDef> = Object.fromEntries([
   S({ id: 'dread', name: 'Dread', level: 1, kind: 'control', save: 'wis', effect: 'frightened', desc: 'Original. You show a foe its own grave: Wis save or it is frightened and cowers.', aliases: ['dread', 'cause fear', 'fear'], original: true }),
   S({ id: 'tremor', name: 'Tremor', level: 1, kind: 'save', damage: '1d6', dtype: 'bludgeoning', save: 'dex', aoe: 3, effect: 'prone', original: true, desc: 'Original. The ground heaves: up to three foes, Dex save or 1d6 bludgeoning and knocked prone.', aliases: ['tremor', 'earth tremor', 'quake'] }),
 ].map((s) => [s.id, s]));
+
+import { HIGH_SPELLS } from './spells_high';
+for (const sp of HIGH_SPELLS) SPELLS[sp.id] = sp;

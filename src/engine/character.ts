@@ -4,6 +4,7 @@ import { CLASSES, classById, arrayFor, type ClassDef } from '../data/classes';
 import { SPECIES, speciesById, type SpeciesDef } from '../data/species';
 import { BACKGROUNDS, backgroundById, FEATS } from '../data/backgrounds';
 import { LIFE } from '../data/lifepath';
+import { spellPoints, maxSpellLevel, attacksPerAction, asiLevels, CLASS_FEATURES, subclassById, subclassesFor, cantripTier, casterKind } from '../data/progression';
 import type { Abilities, Ability, Character, CreationSpec, Skill, Stack, WeaponDef } from './types';
 import { ABILITIES, SKILL_ABILITY } from './types';
 
@@ -83,9 +84,9 @@ export function createFromSpec(spec: CreationSpec): Character {
     name: spec.name.trim() || 'Wanderer', species: sp.id, cls: k.id, background: bg.id, level: 1, xp: 0, abilities,
     hp: 0, maxHp: 0, tempHp: 0, hitDice: 1, skills: Array.from(skills), expertise: [],
     saves: k.saves, weaponProf, armorProf, cantrips: Array.from(cantrips), spells: Array.from(spells),
-    slots: { max: k.casting?.slots[0] ?? 0, used: 0 }, resources: {}, inventory,
+    slots: { max: spellPoints(k.id, 1), used: 0 }, resources: {}, inventory,
     equipped: { ...k.equip, worn: [] }, ammo: {}, copper: k.copper + bg.copper, conditions: [], deathSaves: { ok: 0, fail: 0 },
-    pronoun: spec.pronoun, options, feat: bg.feat, look: spec.look, backstory: spec.backstory, life: { ...spec.life }, drunk: 0, wildHp: 0,
+    pronoun: spec.pronoun, options, feat: bg.feat, look: spec.look, backstory: spec.backstory, life: { ...spec.life }, drunk: 0, wildHp: 0, perks: [], features: [],
   };
   if (k.id === 'cleric' && options.order === 'protector') c.equipped.armor = 'chain_mail';
   if (!c.equipped.ranged && hasItem(c, 'service_revolver')) c.equipped.ranged = 'service_revolver';
@@ -119,15 +120,15 @@ function setResources(c: Character) {
   const p = prof(c);
   const set = (id: string, max: number, per: 'short' | 'long') => { const used = r[id]?.used ?? 0; r[id] = { max, used: Math.min(used, max), per }; };
   switch (c.cls) {
-    case 'barbarian': set('rage', L >= 2 ? 3 : 2, 'long'); break;
-    case 'bard': set('inspiration_die', Math.max(1, am(c, 'cha')), 'long'); break;
-    case 'cleric': if (L >= 2) set('channel', 2, 'short'); break;
-    case 'druid': if (L >= 2) set('wild_shape', 2, 'short'); break;
-    case 'fighter': set('second_wind', 2, 'long'); if (L >= 2) set('action_surge', 1, 'short'); break;
-    case 'monk': if (L >= 2) set('focus', 2, 'short'); break;
+    case 'barbarian': set('rage', L >= 17 ? 6 : L >= 12 ? 5 : L >= 6 ? 4 : L >= 2 ? 3 : 2, 'long'); break;
+    case 'bard': set('inspiration_die', Math.max(1, am(c, 'cha')), L >= 5 ? 'short' : 'long'); break;
+    case 'cleric': if (L >= 2) set('channel', L >= 18 ? 4 : L >= 6 ? 3 : 2, 'short'); break;
+    case 'druid': if (L >= 2) set('wild_shape', L >= 17 ? 4 : L >= 6 ? 3 : 2, 'short'); break;
+    case 'fighter': set('second_wind', L >= 10 ? 4 : L >= 4 ? 3 : 2, 'long'); if (L >= 2) set('action_surge', L >= 17 ? 2 : 1, 'short'); if (L >= 9) set('indomitable', L >= 17 ? 3 : L >= 13 ? 2 : 1, 'long'); break;
+    case 'monk': if (L >= 2) set('focus', L, 'short'); break;
     case 'paladin': set('lay_on_hands', 5 * L, 'long'); break;
-    case 'ranger': set('favored', 2, 'long'); break;
-    case 'sorcerer': set('innate', 2, 'long'); set('treaty_fire', 1, 'long'); if (L >= 2) set('sorcery', 2, 'long'); break;
+    case 'ranger': set('favored', Math.max(2, p), 'long'); break;
+    case 'sorcerer': set('innate', 2, 'long'); set('treaty_fire', 1, 'long'); if (L >= 2) set('sorcery', L, 'long'); break;
     case 'warlock': if (L >= 2) set('cunning', 1, 'long'); break;
     case 'wizard': set('arcane_recovery', 1, 'long'); set('loremaster', 1, 'long'); break;
   }
@@ -143,39 +144,102 @@ export function maxHpAt(c: Character, level: number): number {
   const k = cls(c);
   const con = am(c, 'con');
   const perLevel = (c.species === 'dwarf' ? 1 : 0) + (c.feat === 'stout' ? 2 : 0);
-  let hp = k.hitDie + con + perLevel + SOLO_GRIT;
-  for (let l = 2; l <= level; l++) hp += Math.max(1, Math.floor(k.hitDie / 2) + 1 + con) + perLevel;
+  const perLevel2 = perLevel + (c.perks ?? []).filter((p) => p.startsWith('hp_lvl:')).reduce((n, p) => n + Number(p.split(':')[1]), 0);
+  let hp = k.hitDie + con + perLevel2 + SOLO_GRIT;
+  for (let l = 2; l <= level; l++) hp += Math.max(1, Math.floor(k.hitDie / 2) + 1 + con) + perLevel2;
   return Math.max(1, hp);
+}
+
+/** Every spell this character's class can learn, up to the level they can cast. */
+export function learnableSpells(c: Character): string[] {
+  const k = cls(c);
+  const max = maxSpellLevel(c.cls, c.level);
+  const base = (k.casting?.list ?? []).filter((id) => !isCantrip(id));
+  const high = Object.values(SPELLS).filter((sp) => sp.level >= 2 && sp.level <= max && ((sp.classes ?? []).includes(c.cls) || (c.cls === 'bard' && c.level >= 10) || (c.subclass === 'bellborn' && (sp.classes ?? []).includes('cleric')))).sort((a, b) => b.level - a.level).map((sp) => sp.id);
+  return [...high, ...base].filter((id) => SPELLS[id] && SPELLS[id].level <= Math.max(1, max));
 }
 
 export function levelUp(c: Character): string[] {
   const k = cls(c);
   const before = c.maxHp;
   c.level += 1;
-  c.maxHp = maxHpAt(c, c.level);
-  c.hp = c.maxHp;
-  c.hitDice = c.level;
-  const out = [`Your maximum HP rises by ${c.maxHp - before} to ${c.maxHp}.`];
-  if (k.casting) {
-    c.slots.max = k.casting.slots[Math.min(c.level, 2) - 1];
-    c.slots.used = 0;
-    out.push(`You now have ${c.slots.max} spell slot${c.slots.max > 1 ? 's' : ''}${k.casting.pact ? ' (they recover on a short rest)' : ''}.`);
-    // learn one more spell from the class list
-    const next = k.casting.list.find((id) => !isCantrip(id) && !c.spells.includes(id));
-    if (next && c.spells.length < k.casting.prepared[1] + (k.id === 'ranger' ? 1 : 0)) { c.spells.push(next); out.push(`You learn ${SPELLS[next].name}.`); }
+  c.perks ??= []; c.features ??= [];
+  const L = c.level;
+  const out: string[] = [];
+  // ability score improvement: +2 to your main ability (or spread it once that's maxed)
+  if (asiLevels(c.cls).includes(L)) {
+    const order = Array.from(new Set([...k.primary, 'con', 'dex', 'wis', 'cha', 'str', 'int'])) as Ability[];
+    let pts = 2; const got: string[] = [];
+    for (const a of order) { while (pts > 0 && c.abilities[a] < 20) { c.abilities[a] += 1; pts -= 1; got.push(a.toUpperCase()); } if (!pts) break; }
+    if (got.length) out.push(`Ability Score Improvement: ${Array.from(new Set(got)).map((a) => `${a} +${got.filter((x) => x === a).length}`).join(', ')}.`);
   }
-  if (c.level === 2) {
+  // class and subclass features
+  const feats = [...(L === 2 ? (k.features[2] ?? []).map((t) => ({ name: t.split(':')[0].split('(')[0].trim(), desc: t, perks: [] as string[] })) : []), ...(CLASS_FEATURES[c.cls]?.[L] ?? [])];
+  const sub = c.subclass ? subclassById(c.subclass) : undefined;
+  if (sub) feats.push(...(sub.features[L] ?? []));
+  for (const f of feats) {
+    out.push(`${f.name}: ${f.desc}`);
+    if (L > 2) c.features.push(`${f.name} (${L})`);
+    for (const p of f.perks ?? []) {
+      c.perks.push(p);
+      if (p.startsWith('stat:')) { const [, ab, n] = p.split(':'); c.abilities[ab as Ability] = Math.min(24, c.abilities[ab as Ability] + Number(n)); }
+    }
+  }
+  if (L === 3 && !c.subclass) out.push(`Choose your path: ${subclassesFor(c.cls).map((x) => x.name).join(' · ')}. (Say "choose ${subclassesFor(c.cls)[0]?.name.toLowerCase()}", or tap it on your sheet.)`);
+  // hit points
+  c.maxHp = maxHpAt(c, L);
+  c.hp = c.maxHp;
+  c.hitDice = L;
+  out.unshift(`Your maximum HP rises by ${c.maxHp - before} to ${c.maxHp}.`);
+  // attacks
+  const atk = attacksPerAction(c.cls, L, c.perks) + (c.cls === 'warlock' && L >= 5 && c.options.invocation === 'blade' ? 1 : 0);
+  const prevAtk = attacksPerAction(c.cls, L - 1, c.perks);
+  if (atk > prevAtk) out.push(`You now make ${atk} attacks when you take the Attack action.`);
+  // spells
+  if (k.casting) {
+    c.slots.max = spellPoints(c.cls, L);
+    c.slots.used = 0;
+    const max = maxSpellLevel(c.cls, L);
+    out.push(`Spell power: ${c.slots.max} points (a spell costs its level), up to ${['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'][max]}-level spells${k.casting.pact ? ', back on a short rest' : ''}.`);
+    const learn = c.cls === 'wizard' ? 2 : 1;
+    const pool = learnableSpells(c).filter((id) => !c.spells.includes(id));
+    for (const id of pool.slice(0, learn)) { c.spells.push(id); out.push(`You learn ${SPELLS[id].name}.`); }
+    if ([4, 10].includes(L)) { const cn = k.casting.list.find((id) => isCantrip(id) && !c.cantrips.includes(id)); if (cn) { c.cantrips.push(cn); out.push(`You learn the ${SPELLS[cn].name} cantrip.`); } }
+    if ([5, 11, 17].includes(L) && c.cantrips.some((x) => SPELLS[x]?.damage)) out.push(`Your cantrips grow stronger (${cantripTier(L)}× damage dice).`);
+  }
+  if (c.cls === 'rogue' && L % 2 === 1) out.push(`Sneak Attack: ${Math.ceil(L / 2)}d6.`);
+  if (L === 2) {
     if (c.cls === 'paladin' && !c.spells.includes('divine_smite')) c.spells.push('divine_smite');
     if (c.cls === 'bard') c.expertise = Array.from(new Set([...c.expertise, ...c.skills.slice(0, 2)]));
     if (c.cls === 'ranger') c.expertise = Array.from(new Set([...c.expertise, c.skills[0]]));
     if (c.cls === 'wizard') { const sch = (['arcana', 'history', 'investigation', 'religion'] as Skill[]).find((s) => c.skills.includes(s)); if (sch) c.expertise.push(sch); }
     if (c.cls === 'warlock' && c.options.invocation !== 'agonizing') c.options.invocation2 = 'agonizing';
     if ((c.cls === 'paladin' || c.cls === 'ranger') && !c.options.style) c.options.style = c.cls === 'paladin' ? 'defense' : 'archery';
-    for (const f of k.features[2] ?? []) out.push(f);
   }
+  if (c.cls === 'rogue' && [6].includes(L)) { const more = c.skills.filter((x) => !c.expertise.includes(x)).slice(0, 2); c.expertise.push(...more); }
   setResources(c);
   return out;
 }
+
+/** Pick a subclass (at level 3 or later). Applies every feature you've already reached. */
+export function chooseSubclass(c: Character, name: string): string[] | string {
+  if (c.level < 3) return 'Subclasses open up at level 3.';
+  if (c.subclass) return `You already walk the ${subclassById(c.subclass)?.name}.`;
+  const n = name.toLowerCase().replace(/^(the|a|an)\s+/, '');
+  const sc = subclassesFor(c.cls).find((x) => x.name.toLowerCase().includes(n) || x.id === n || n.includes(x.name.toLowerCase().replace(/^(path|college|domain|circle|oath|way|school) of (the )?/, '')));
+  if (!sc) return `Your choices: ${subclassesFor(c.cls).map((x) => x.name).join(', ')}.`;
+  c.subclass = sc.id;
+  c.perks ??= []; c.features ??= [];
+  const out = [`You take up the ${sc.name}. ${sc.blurb}`];
+  for (const [lv, fs] of Object.entries(sc.features)) {
+    if (Number(lv) > c.level) continue;
+    for (const f of fs) { out.push(`${f.name}: ${f.desc}`); c.features.push(`${f.name} (${lv})`); for (const p of f.perks ?? []) { c.perks.push(p); if (p.startsWith('stat:')) { const [, ab, v] = p.split(':'); c.abilities[ab as Ability] = Math.min(24, c.abilities[ab as Ability] + Number(v)); } } }
+  }
+  c.maxHp = maxHpAt(c, c.level); c.hp = Math.min(c.hp, c.maxHp);
+  return out;
+}
+
+export { casterKind };
 
 export function xpToNext(c: Character): number { return XP_FOR_LEVEL[c.level + 1] ?? Infinity; }
 
@@ -216,11 +280,13 @@ export function armorClass(c: Character): number {
   }
   if (shield) ac += 2;
   for (const w of c.equipped.worn) ac += ITEMS[w]?.acBonus ?? 0;
+  for (const p of c.perks ?? []) if (p.startsWith('ac:')) ac += Number(p.split(':')[1]);
   return ac;
 }
 
 export function saveBonus(c: Character, a: Ability): number {
-  let b = am(c, a) + (c.saves.includes(a) ? prof(c) : 0);
+  let b = am(c, a) + (c.saves.includes(a) || (c.cls === 'monk' && c.level >= 14) ? prof(c) : 0);
+  for (const p of c.perks ?? []) if (p.startsWith('save_bonus:')) b += Math.max(1, am(c, p.split(':')[1] as Ability));
   for (const w of c.equipped.worn) b += ITEMS[w]?.saveBonus ?? 0;
   return b;
 }
@@ -241,7 +307,7 @@ export function skillBonus(c: Character, s: Skill): number {
 export function passivePerception(c: Character) { return 10 + skillBonus(c, 'perception') + (c.feat === 'watchful' ? 5 : 0); }
 
 export function initiativeBonus(c: Character): number {
-  return am(c, 'dex') + (c.feat === 'alert' ? prof(c) : 0) + (species(c).flags?.includes('hare-trigger') ? prof(c) : 0);
+  return am(c, 'dex') + (c.feat === 'alert' ? prof(c) : 0) + (species(c).flags?.includes('hare-trigger') ? prof(c) : 0) + ((c.perks ?? []).includes('init_adv') ? 3 : 0);
 }
 
 export function castingAbility(c: Character): Ability {
@@ -251,7 +317,7 @@ export function castingAbility(c: Character): Ability {
 }
 export function spellMod(c: Character): number { return am(c, castingAbility(c)); }
 export function spellAttack(c: Character): number { return spellMod(c) + prof(c); }
-export function spellDC(c: Character): number { return 8 + spellMod(c) + prof(c); }
+export function spellDC(c: Character): number { return 8 + spellMod(c) + prof(c) + (c.cls === 'bard' && c.level >= 20 ? 1 : 0); }
 
 export function weaponById(id?: string): WeaponDef | undefined {
   if (!id) return undefined;
@@ -290,7 +356,7 @@ export function unarmedDice(c: Character): string | null {
   const sp = species(c);
   const sizes: number[] = [];
   if (sp.weapon) sizes.push(parseInt(sp.weapon.damage.split('d')[1], 10));
-  if (c.cls === 'monk') sizes.push(6);
+  if (c.cls === 'monk') sizes.push(c.level >= 17 ? 12 : c.level >= 11 ? 10 : c.level >= 5 ? 8 : 6);
   if (c.feat === 'brawler') sizes.push(4);
   if (!sizes.length) return null;
   return `1d${Math.max(...sizes)}`;

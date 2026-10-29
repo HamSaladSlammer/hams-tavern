@@ -1,6 +1,8 @@
 // Rules data adapted from the System Reference Document 5.2.1 (CC-BY-4.0, Wizards of the Coast).
 // See ATTRIBUTION.md. Setting-specific items (firearms, the Kalashscovia names) are original.
 import type { ArmorDef, ItemDef, MonsterDef, WeaponDef } from './types';
+import { EXTRA_WEAPONS, EXTRA_ARMOR, EXTRA_ITEMS } from '../data/loot';
+import { BESTIARY } from '../data/bestiary';
 
 export { SPECIES, speciesById } from '../data/species';
 export { CLASSES, classById } from '../data/classes';
@@ -48,6 +50,9 @@ export const ARMOR: ArmorDef[] = [
   { id: 'chain_mail', name: 'Chain Mail', base: 16, dexCap: 0, kind: 'heavy', stealthDis: true, price: 7500 },
   { id: 'shield', name: 'Shield', base: 2, dexCap: 0, kind: 'shield', price: 1000 },
 ];
+
+WEAPONS.push(...EXTRA_WEAPONS);
+ARMOR.push(...EXTRA_ARMOR);
 
 // ---------- Items ----------
 const items: ItemDef[] = [];
@@ -110,6 +115,7 @@ items.push(
   { id: 'travel_cloak', name: 'Travel Cloak', kind: 'gear', price: 500, desc: 'Hetch\'s work: oiled wool, deep hood, a lining that smells faintly of cedar. Warm, and much better than what you had.', aliases: ['cloak'] },
   { id: 'cult_candle', name: 'Green-Black Candle', kind: 'treasure', price: 10, desc: 'Burns with a greenish flame. Smells of graves and honey.', aliases: ['candle', 'candles'] },
 );
+items.push(...EXTRA_ITEMS);
 export const ITEMS: Record<string, ItemDef> = Object.fromEntries(items.map((i) => [i.id, i]));
 
 function describeWeapon(w: WeaponDef): string {
@@ -238,6 +244,9 @@ export const MONSTERS: Record<string, MonsterDef> = {
     immune: ['poison'], vulnerable: ['radiant'], desc: 'A skeleton in the rags of very good clothes, with an amused tilt to the skull.', aliases: ['alistair', 'lich', 'skeleton', 'bro'],
   },
 };
+for (const m of BESTIARY) MONSTERS[m.id] = m;
+const CR_BY_XP: [number, number][] = [[10, 0], [25, 0.125], [50, 0.25], [100, 0.5], [200, 1], [450, 2], [700, 3], [1100, 4], [1800, 5]];
+for (const m of Object.values(MONSTERS)) if (m.cr === undefined) m.cr = (CR_BY_XP.find(([xp]) => m.xp <= xp) ?? [0, 5])[1];
 
 export const PROF_BONUS = (level: number) => 2 + Math.floor((Math.max(1, level) - 1) / 4);
-export const XP_FOR_LEVEL = [0, 0, 300, 900, 2700, 6500, 14000];
+export { XP_TABLE as XP_FOR_LEVEL } from '../data/progression';

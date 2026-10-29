@@ -11,6 +11,7 @@ import {
 } from './character';
 import { expand, STRIKES, WEAPON_HITS, FLAVOR } from '../nlp/grammar';
 import { UNARMED_VERBS, type AttackStyle } from '../nlp/parse';
+import { attacksPerAction, cantripTier } from '../data/progression';
 import type { EncounterDef } from '../content/types';
 import { gridFor, dist, feet, hasLOS, coverBonus, costs, pathTo, approachSquare, freeNear, key as pkey, exitAt, type Pt, type Grid } from './grid';
 
@@ -29,6 +30,40 @@ const disabled = (u: Combatant) => down(u) || has(u, 'asleep') || has(u, 'charme
 const mdef = (u: Combatant): MonsterDef | undefined => (u.monster ? MONSTERS[u.monster] : undefined);
 const isUndead = (u: Combatant) => !!mdef(u)?.tags.includes('undead');
 const NAMED = new Set(['merah', 'alistair', 'squib', 'sereza', 'garrick', 'smith', 'hetch', 'doss', 'merla', 'aldwin', 'sergeant']);
+const perks = (c: Ctx) => c.pc.perks ?? [];
+const hasPerk = (c: Ctx, p: string) => perks(c).includes(p);
+function critMin(c: Ctx) { let m = 20; for (const p of perks(c)) if (p.startsWith('crit:')) m = Math.min(m, Number(p.split(':')[1])); return m; }
+function rageBonus(c: Ctx) { let m = 2; for (const p of perks(c)) if (p.startsWith('rage_dmg:')) m = Math.max(m, Number(p.split(':')[1])); return m; }
+export function scaleDice(expr: string, mult: number) { return mult <= 1 ? expr : expr.replace(/(\d+)d(\d+)/g, (_, n, d) => `${Number(n) * mult}d${d}`); }
+/** Extra damage from features ("strike:" perks). kind: weapon (melee/ranged) or spell. */
+function strikeExtras(c: Ctx, t: Combatant, kind: 'melee' | 'ranged' | 'spell', baseType: DamageType, crit: boolean, hurtBefore: boolean, isCantrip = false): { dtype: DamageType; dmg: number; label: string }[] {
+  const out: { dtype: DamageType; dmg: number; label: string }[] = [];
+  const cb = c.s.combat!;
+  const me = pcUnit(c);
+  perks(c).forEach((p, i) => {
+    const parts = p.split(':');
+    if (parts[0] === 'cantrip') {
+      if (!isCantrip) return;
+      const key = `cb_once_${i}`; if (c.flag(key) === cb.round) return; c.set(key, cb.round);
+      out.push({ dtype: baseType, dmg: roll(c.rng, parts[1], crit).total, label: 'elemental fury' });
+      return;
+    }
+    if (parts[0] !== 'strike') return;
+    const [, dice, dt, when, once] = parts;
+    const weaponish = kind !== 'spell';
+    const ok = when === 'any' || (when === 'weapon' && weaponish) || (when === 'melee' && kind === 'melee') || (when === 'raging' && weaponish && has(me, 'raging')) || (when === 'hurt' && weaponish && hurtBefore) || (when === 'round1' && weaponish && cb.round === 1);
+    if (!ok) return;
+    if (once) { const key = `cb_once_${i}`; if (c.flag(key) === cb.round) return; c.set(key, cb.round); }
+    let expr = dice;
+    if (p.includes(':raging:') && p.startsWith('strike:1d6:radiant')) expr = `1d6+${Math.floor(c.pc.level / 2)}`;
+    out.push({ dtype: (dt === 'same' ? baseType : dt) as DamageType, dmg: roll(c.rng, expr, crit).total, label: 'feature' });
+  });
+  const undead = !!mdef(t)?.tags.includes('undead') || ['vessariel', 'drinker'].includes(t.monster ?? '');
+  if (kind === 'melee' && c.pc.equipped.main === 'chisel_of_unmaking' && undead) out.push({ dtype: 'force' as DamageType, dmg: roll(c.rng, '2d6', crit).total, label: 'the Chisel unmakes' });
+  if (kind === 'melee' && !c.pc.equipped.main && c.pc.inventory.some((x) => x.id === 'bellbronze_wraps') && undead) out.push({ dtype: 'thunder' as DamageType, dmg: roll(c.rng, '1d4', crit).total, label: 'bellbronze' });
+  return out;
+}
+
 const properName = (u: Combatant) => /\d$/.test(u.name) || !!u.companion || NAMED.has(u.monster ?? '') || (!!mdef(u) && u.name !== mdef(u)!.name);
 
 const WAKE: Record<string, string> = { chapel_yard: 'kessels_rest', nave: 'kessels_rest', vestry: 'kessels_rest', tower: 'kessels_rest', crypt: 'kessels_rest', kessels_rest: 'kessels_rest', foothills: 'foothills', thornwood: 'breda_square', breda_square: 'breda_square' };
@@ -48,6 +83,7 @@ export function pcAC(c: Ctx): number {
   if (has(me, 'shielded')) ac += 2;
   if (has(me, 'shifted')) ac += 1;
   if (has(me, 'shell')) ac += 4;
+  if (has(me, 'hasted')) ac += 2;
   return ac;
 }
 
@@ -103,7 +139,7 @@ export function startCombat(c: Ctx, encIdOrDef: string | EncounterDef) {
   const g0 = gridFor(mapLoc);
   const bystanders = mapLoc !== c.s.loc ? [] : (ROOMS[c.s.loc]?.npcs?.(c) ?? []).filter((id) => !c.flag(`${id}_dead`)).filter((id) => !(enc.npcIds ?? []).includes(id) && g0.npcSpots[id]).map((id) => g0.npcSpots[id]);
   c.s.combat = { round: 1, order: units.map((u) => u.key), turn: 0, units, encounterId: encId, usedAction: false, usedBonus: false, sneakUsed: false, fleeTo: enc.fleeTo, moveLeft: pcSpeed(c), loc: mapLoc, blockers: bystanders };
-  c.set('cb_last_hit', ''); c.set('cb_surprise_used', false); c.set('cb_charge_used', false);
+  c.set('cb_last_hit', ''); c.set('cb_surprise_used', false); c.set('cb_charge_used', false); c.set('cb_relentless', false);
   c.out('title', '⚔ Combat');
   c.narr(enc.intro);
   c.sys('Initiative: ' + units.map((u) => `${u.name} ${Math.floor(u.init)}`).join(' · '));
@@ -113,7 +149,12 @@ export function startCombat(c: Ctx, encIdOrDef: string | EncounterDef) {
 // ---------- the grid ----------
 export const DYNAMIC: Record<string, EncounterDef> = {};
 export const encounterOf = (id: string) => ENCOUNTERS[id] ?? DYNAMIC[id];
-export function pcSpeed(c: Ctx) { return c.pc.conditions.includes('wildshape') ? 40 : (species(c.pc).speed ?? 30) + (c.pc.cls === 'monk' && c.pc.level >= 2 ? 10 : 0) + (c.pc.cls === 'barbarian' && c.pc.level >= 2 ? 0 : 0); }
+export function pcSpeed(c: Ctx) {
+  let sp = c.pc.conditions.includes('wildshape') ? 40 : (species(c.pc).speed ?? 30) + (c.pc.cls === 'monk' && c.pc.level >= 2 ? 10 : 0);
+  for (const p of c.pc.perks ?? []) if (p.startsWith('speed:')) sp += Number(p.split(':')[1]);
+  if (c.s.combat && has(pcUnit(c), 'hasted')) sp *= 2;
+  return sp;
+}
 function unitSpeed(c: Ctx, u: Combatant) {
   if (u.isPc) return pcSpeed(c);
   if (u.companion) return u.companion === 'kettle' ? 40 : 30;
@@ -212,7 +253,7 @@ function closeIn(c: Ctx, t: Combatant, reach: number, needLOS: boolean, allowDas
   }
   const moved = walk(c, me, path, budget);
   cb.moveLeft -= moved * 5;
-  c.sys(moved ? `You move ${moved * 5} feet toward ${t.name}, but it's still out of reach.` : `${t.name} is out of reach (${feet(at(me), at(t))} ft away) and you've no movement left.`);
+  c.sys(moved ? `You move ${moved * 5} feet toward ${t.name}, but it's still out of reach.` : `${t.name} is out of reach (${feet(at(me), at(t))} ft away) and you've no movement left. ("dash", a ranged attack or spell, or "end turn".)`);
   return 'stuck';
 }
 
@@ -302,10 +343,24 @@ export function afterPlayerAction(c: Ctx) {
   if (!c.s.combat) return;
   if (checkEnd(c)) return;
   const cb = c.s.combat;
-  if (cb.usedAction && (cb.usedBonus || !bonusOptions(c).length)) endPlayerTurn(c);
+  if (cb.usedAction && !(cb.attacksLeft ?? 0) && (cb.usedBonus || !bonusOptions(c).length)) endPlayerTurn(c);
 }
 
-export function endPlayerTurn(c: Ctx) { if (!c.s.combat) return; nextTurn(c); runUntilPlayer(c); }
+export function endPlayerTurn(c: Ctx) {
+  if (!c.s.combat) return;
+  const me = pcUnit(c);
+  if (has(me, 'spiritual') && !has(me, 'unconscious')) {
+    const t = livingFoes(c).sort((a, b) => dist(at(a), at(me)) - dist(at(b), at(me)))[0];
+    if (t) {
+      const r = d20(c.rng).natural + spellAttack(c.pc);
+      if (r >= t.ac) hurtFoe(c, t, roll(c.rng, `1d8+${Math.max(0, spellMod(c.pc))}`).total, 'force', { before: (x) => c.out('hit', `Your spiritual weapon swings at ${t.name}: ${x} force.`) });
+      else c.out('miss', `Your spiritual weapon misses ${t.name}.`);
+      if (checkEnd(c)) return;
+    }
+  }
+  c.s.combat.attacksLeft = 0;
+  nextTurn(c); runUntilPlayer(c);
+}
 
 export function bonusOptions(c: Ctx): string[] {
   const cb = c.s.combat!;
@@ -315,7 +370,7 @@ export function bonusOptions(c: Ctx): string[] {
   const o: string[] = [];
   const hurt = pc.hp < pc.maxHp * 0.6;
   if (res(c, 'second_wind') && pc.hp < pc.maxHp) o.push('second wind');
-  if (hasItem(pc, 'potion_healing') && hurt) o.push('drink potion');
+  if (pc.inventory.some((x) => ITEMS[x.id]?.kind === 'potion') && hurt) o.push('drink potion');
   if (pc.cls === 'monk' && cb.usedAction) o.push('punch');
   if (res(c, 'focus') && cb.usedAction && pc.cls === 'monk') o.push('flurry of blows');
   if (pc.spells.includes('healing_word') && pc.slots.used < pc.slots.max && (pc.hp < pc.maxHp * 0.5 || cb.units.some((u) => u.companion && has(u, 'unconscious')))) o.push('cast healing word');
@@ -341,7 +396,15 @@ function runUntilPlayer(c: Ctx) {
     if (u.isPc) {
       const cb = c.s.combat;
       cb.usedAction = false; cb.usedBonus = false; cb.sneakUsed = false; cb.dashed = false; cb.disengaged = false;
-      cb.moveLeft = unitSpeed(c, u); u.reaction = false;
+      cb.moveLeft = unitSpeed(c, u); u.reaction = false; cb.attacksLeft = 0;
+      if (has(u, 'guardians') && !has(u, 'unconscious')) {
+        for (const f of livingFoes(c).filter((x) => dist(at(x), at(u)) <= 3)) {
+          const sv = d20(c.rng).natural + mod(mdef(f)!.abilities.wis);
+          let d = roll(c.rng, '3d8').total; if (sv >= spellDC(c.pc)) d = Math.floor(d / 2);
+          hurtFoe(c, f, d, 'radiant', { before: (x) => c.out('roll', `💥 Spirit guardians tear at ${f.name}: ${x} radiant.`) });
+        }
+        if (checkEnd(c)) return;
+      }
       c.set('cb_last_hit', '');
       del(u, 'dodging'); del(u, 'shield_spell'); del(u, 'reckless'); del(u, 'shell');
       if (has(u, 'prone') && !has(u, 'unconscious')) { del(u, 'prone'); c.narr('You scramble back to your feet.'); }
@@ -413,6 +476,7 @@ function hurtFoe(c: Ctx, t: Combatant, amount: number, dtype: DamageType, opts: 
     c.out('good', expand(c.rng, FLAVOR, key, { target: t.name }) + '.');
     c.s.stats.kills += 1;
     if (c.pc.cls === 'warlock' && c.pc.options.patron === 'green') { c.pc.tempHp = Math.max(c.pc.tempHp, c.pc.level); c.sys(`The Rot That Feeds: +${c.pc.level} temporary HP.`); }
+    if ((c.pc.perks ?? []).includes('kill_temp') && c.s.combat && currentUnit(c).isPc) { const th = c.pc.level + Math.max(1, spellMod(c.pc)); if (th > c.pc.tempHp) { c.pc.tempHp = th; c.sys(`+${th} temporary HP.`); } }
   } else if (def?.surrenderAt && t.hp <= def.surrenderAt && !has(t, 'surrendered')) {
     add(t, 'surrendered');
     c.narr(t.monster === 'merah' ? 'Merah drops her sickle and sinks onto the stairs, both hands raised. "Enough. Enough. She\'ll forgive you." She means it, which is worse.' : `${t.name} throws down their weapon and begs for mercy.`);
@@ -434,10 +498,13 @@ function hurtParty(c: Ctx, t: Combatant, amount: number, dtype: DamageType, atta
       const a = Math.min(pc.wildHp, dmg); pc.wildHp -= a; dmg -= a;
       if (pc.wildHp <= 0) { pc.conditions = pc.conditions.filter((x) => x !== 'wildshape'); c.narr('The wolf-shape tears away and you\'re yourself again, gasping.'); }
     }
+    if ((pc.perks ?? []).includes('uncanny') && !t.reaction && dmg >= 4 && !has(t, 'unconscious')) { t.reaction = true; dmg = Math.floor(dmg / 2); c.sys('Uncanny Dodge: you take half.'); }
     if (pc.tempHp) { const a = Math.min(pc.tempHp, dmg); pc.tempHp -= a; dmg -= a; }
     announce(dmg);
     t.hp -= dmg;
     if (t.hp <= 0) {
+      if (has(t, 'warded')) { del(t, 'warded'); t.hp = 1; pc.hp = 1; c.out('good', 'Death Ward: the killing blow slides off you. 1 HP.'); return dmg; }
+      if ((pc.perks ?? []).includes('relentless_rage') && (pc.cls !== 'barbarian' || has(t, 'raging')) && !c.flag('cb_relentless')) { c.set('cb_relentless', true); t.hp = 1; pc.hp = 1; c.out('good', 'You refuse to fall. 1 HP.'); return dmg; }
       const rel = res(c, 'relentless');
       const tf = res(c, 'treaty_fire');
       if (rel) { rel.used += 1; t.hp = 1; c.out('good', 'Relentless Endurance: you should be down. You refuse. 1 HP.'); }
@@ -555,7 +622,8 @@ export function playerAttack(c: Ctx, style: AttackStyle, verb: string, targetNam
   if (has(t, 'surrendered')) { c.sys(`${t.name} has surrendered. Type "finish ${t.name.toLowerCase()}" if you really mean it, or "spare".`); return; }
   let bonus = false;
   if (cb.usedAction && pc.cls === 'monk' && (w.id === 'unarmed' || w.id.startsWith('imp:') || w.id.startsWith('prop:') || (w.category === 'simple' && !w.twoHanded)) && !cb.usedBonus) bonus = true;
-  if (cb.usedAction && !bonus) { c.sys('You have already used your action this turn. (Type "end turn".)'); return; }
+  const extra = cb.usedAction && !bonus && (cb.attacksLeft ?? 0) > 0;
+  if (cb.usedAction && !bonus && !extra) { c.sys('You have already used your action this turn. (Type "end turn".)'); return; }
   if (w.category === 'firearm') {
     if (pc.equipped.main !== w.id && pc.equipped.ranged !== w.id) pc.equipped.ranged = w.id;
     if (c.flag(`jam_${w.id}`)) { c.sys(`Your ${w.name} is jammed. ${pc.cls === 'fighter' ? 'Clear it as a bonus action' : 'Spend an action to clear it'} ("unjam").`); return; }
@@ -567,7 +635,7 @@ export function playerAttack(c: Ctx, style: AttackStyle, verb: string, targetNam
   const isRanged = w.ranged || style === 'thrown';
   const [rn, rl] = w.range ?? (w.ranged ? [80, 320] : style === 'thrown' ? [20, 60] : [5, 5]);
   const reach = isRanged ? Math.floor(rl / 5) : 1;
-  const pos = closeIn(c, t, reach, isRanged, !bonus);
+  const pos = closeIn(c, t, reach, isRanged, !bonus && !extra);
   if (pos === 'dashed') { c.s.lastTarget = t.key; afterPlayerAction(c); return; }
   if (pos === 'stuck') return;
   void rn;
@@ -578,11 +646,19 @@ export function playerAttack(c: Ctx, style: AttackStyle, verb: string, targetNam
     c.out('bad', `Steel comes out. The whole room goes silent at once. This isn't a brawl any more.`);
     c.set('brawl_escalated', true);
   }
-  useAction(c, bonus);
+  if (extra) cb.attacksLeft = (cb.attacksLeft ?? 1) - 1;
+  else {
+    useAction(c, bonus);
+    if (!bonus) {
+      const n = attacksPerAction(pc.cls, pc.level, pc.perks ?? []) + (pc.cls === 'warlock' && pc.level >= 5 && pc.options.invocation === 'blade' ? 1 : 0) + (has(pcUnit(c), 'hasted') ? 1 : 0);
+      cb.attacksLeft = n - 1;
+    }
+  }
   const tdef = mdef(t);
   c.set('cb_subdue', !!(c.flag('subdue_intent') || ((w.id === 'unarmed' || w.id.startsWith('imp:') || w.id.startsWith('prop:')) && tdef?.tags.includes('humanoid'))));
   if (bonus) c.sys('Martial Arts: a bonus-action strike.');
   doAttack(c, t, w, style, verb, limb);
+  if (c.s.combat && (cb.attacksLeft ?? 0) > 0 && livingFoes(c).length) c.sys(`${cb.attacksLeft} more attack${cb.attacksLeft! > 1 ? 's' : ''} this turn.`);
   c.s.lastTarget = t.key;
   afterPlayerAction(c);
 }
@@ -610,8 +686,8 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   const longShot = ranged && feet(at(me), at(t)) > range[0];
   const crowded = ranged && adjacentFoesOf(c, me).length > 0;
   const cover = coverBonus(g, at(me), at(t), c.s.combat!.units.filter((u) => u !== me && u !== t && !out(u)).map(at));
-  const advFlag = has(me, 'hidden') || has(t, 'guided') || has(t, 'restrained') || has(t, 'faerie') || has(t, 'asleep') || has(me, 'cry') || (!ranged && has(t, 'prone')) || (has(me, 'reckless') && strMelee);
-  const disFlag = has(me, 'prone') || (ranged && has(t, 'prone')) || (pc.drunk >= 3) || longShot || crowded;
+  const advFlag = has(me, 'hidden') || has(me, 'invisible') || has(t, 'guided') || has(t, 'restrained') || has(t, 'faerie') || has(t, 'asleep') || has(t, 'paralyzed') || has(me, 'cry') || (!ranged && has(t, 'prone')) || (has(me, 'reckless') && strMelee) || (hasPerk(c, 'precise_hunter') && has(t, 'marked'));
+  const disFlag = has(me, 'prone') || (ranged && has(t, 'prone')) || (pc.drunk >= 3 && !hasPerk(c, 'drunk_ok')) || longShot || crowded;
   if (longShot) c.sys('Long range: disadvantage.');
   if (crowded) c.sys('Shooting with an enemy in your face: disadvantage.');
   const adv = combineAdv(advFlag, disFlag);
@@ -625,7 +701,7 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   let total = natural + toHit + bless;
   const lk2 = luckyReroll(c, natural, total, t.ac + coverBonus(gridOf(c), at(me), at(t)));
   if (lk2.note) { natural = lk2.natural; total = natural + toHit + bless + lk2.extra; c.sys(lk2.note); }
-  const crit = natural === 20 || (has(t, 'asleep') && !ranged);
+  const crit = natural >= critMin(c) || ((has(t, 'asleep') || has(t, 'paralyzed')) && !ranged);
   const tac = t.ac + cover;
   const hit = crit || (natural !== 1 && total >= tac);
   c.out('roll', `🎲 ${w.name} vs ${t.name}: d20${r.rolls.length > 1 ? `(${r.rolls.join(',')} ${r.adv})` : ''} ${natural} ${fmtMod(toHit)}${bless ? ` +${bless} bless` : ''}${lk2.extra ? ` +${lk2.extra}` : ''} = ${total} vs AC ${t.ac}${cover ? ` +${cover} cover` : ''}${crit ? ' — CRITICAL!' : hit ? ' — hit' : ' — miss'}`);
@@ -659,12 +735,19 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   if (pc.feat === 'brawler' && (isUnarmed || improvisedHit) && dmg <= 1) dmg = roll(c.rng, expr, crit).total;
   if (pc.options.style === 'great' && w.twoHanded) dmg += 1;
   const extras: string[] = [];
-  if (has(me, 'raging') && strMelee) { dmg += 2; extras.push('+2 rage'); }
+  if (has(me, 'raging') && strMelee) { const rb = rageBonus(c); dmg += rb; extras.push(`+${rb} rage`); }
+  const hurtBefore = t.hp < t.maxHp;
   let sneak = 0;
   const allyNear = c.s.combat!.units.some((u) => u.side === 'party' && !u.isPc && !down(u) && dist(at(u), at(t)) <= 1);
-  if (pc.cls === 'rogue' && !c.s.combat!.sneakUsed && (w.finesse || w.ranged) && (adv === 'adv' || allyNear) && adv !== 'dis') { sneak = roll(c.rng, '1d6', crit).total; c.s.combat!.sneakUsed = true; extras.push(`${sneak} sneak attack`); }
+  const duel = hasPerk(c, 'sneak_duel') && adjacentFoesOf(c, me).length <= 1;
+  if (pc.cls === 'rogue' && !c.s.combat!.sneakUsed && (w.finesse || w.ranged) && (adv === 'adv' || allyNear || duel) && adv !== 'dis') { sneak = roll(c.rng, `${Math.ceil(pc.level / 2)}d6`, crit).total; c.s.combat!.sneakUsed = true; extras.push(`${sneak} sneak attack`); }
   dmg += sneak;
-  if (has(t, 'marked')) { const d = roll(c.rng, pc.cls === 'ranger' && isUndead(t) ? '1d8' : '1d6', crit).total; dmg += d; extras.push(`${d} hunter's mark`); }
+  if (has(t, 'marked')) { const d = roll(c.rng, hasPerk(c, 'mark_d10') ? '1d10' : pc.cls === 'ranger' && isUndead(t) ? '1d8' : '1d6', crit).total; dmg += d; extras.push(`${d} hunter's mark`); }
+  if (has(me, 'branded')) { del(me, 'branded'); const d = roll(c.rng, '2d6', crit).total; dmg += d; extras.push(`${d} brand`); add(t, 'guided'); }
+  if (has(me, 'staggering')) { del(me, 'staggering'); const d = roll(c.rng, '4d6', crit).total; dmg += d; extras.push(`${d} staggering smite`); add(t, 'halted'); }
+  const fx = strikeExtras(c, t, ranged ? 'ranged' : 'melee', dtype, crit, hurtBefore);
+  const otherFx = fx.filter((f) => f.dtype !== dtype);
+  for (const f of fx.filter((f) => f.dtype === dtype)) { dmg += f.dmg; extras.push(`${f.dmg} ${f.label}`); }
   if (has(me, 'fury')) { del(me, 'fury'); dmg += prof(pc); extras.push(`${prof(pc)} fury`); }
   if (species(pc).flags?.includes('surprise') && !c.flag('cb_surprise_used') && c.s.combat!.round === 1 && !has(t, 'acted')) { c.set('cb_surprise_used', true); const d = roll(c.rng, '2d6', crit).total; dmg += d; extras.push(`${d} surprise attack`); }
   if (species(pc).flags?.includes('charge') && isUnarmed && !c.flag('cb_charge_used')) { c.set('cb_charge_used', true); const d = roll(c.rng, '1d6', crit).total; dmg += d; extras.push(`${d} charge`); }
@@ -674,6 +757,8 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   // after-hit riders
   if (has(t, 'hexed') && !down(t)) hurtFoe(c, t, roll(c.rng, '1d6').total, 'necrotic', { before: (d) => c.out('roll', `💥 Hex: +${d} necrotic.`) });
   if (has(me, 'divine_favor') && !ranged && !down(t)) hurtFoe(c, t, roll(c.rng, '1d4').total, 'radiant', { before: (d) => c.out('roll', `💥 Divine Favour: +${d} radiant.`) });
+  if (has(me, 'mantle') && !down(t)) hurtFoe(c, t, roll(c.rng, '1d4').total, 'radiant', { before: (d) => c.out('roll', `💥 Crusader's mantle: +${d} radiant.`) });
+  for (const f of otherFx) if (!down(t)) hurtFoe(c, t, f.dmg, f.dtype, { before: (d) => c.out('roll', `💥 +${d} ${f.dtype}.`) });
   if (has(me, 'jaws') && isUnarmed && /bite|chomp|gnaw|snap/.test(verb)) { del(me, 'jaws'); pc.tempHp = Math.max(pc.tempHp, prof(pc)); c.sys(`Hungry Jaws: +${prof(pc)} temporary HP.`); }
   if (species(pc).flags?.includes('hammering') && isUnarmed && !down(t) && !has(t, 'prone')) {
     const sv = d20(c.rng).natural + mod(mdef(t)!.abilities.str);
@@ -720,10 +805,11 @@ export function findSpell(name: string) {
 function useSlot(c: Ctx, level: number): boolean {
   if (level === 0) return true;
   const pc = c.pc;
-  if (pc.slots.used >= pc.slots.max) return false;
-  pc.slots.used += 1;
+  if (pc.slots.used + level > pc.slots.max) return false;
+  pc.slots.used += level;
   return true;
 }
+const canAfford = (c: Ctx, level: number) => level === 0 || c.pc.slots.used + level <= c.pc.slots.max;
 
 export function playerCast(c: Ctx, spellName: string, targetName?: string) {
   const pc = c.pc;
@@ -734,7 +820,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
   if (pc.conditions.includes('wildshape')) { c.sys('Wolves don\'t cast spells. ("revert" to change back.)'); return; }
   const freeMark = sp.id === 'hunters_mark' && !!res(c, 'favored');
   const freeArmor = sp.id === 'mage_armor' && pc.cls === 'warlock' && pc.options.invocation === 'armor';
-  if (sp.level === 1 && !freeMark && !freeArmor && pc.slots.used >= pc.slots.max) { c.sys(`You have no spell slots left. They come back after a ${pc.cls === 'warlock' ? 'short' : 'long'} rest.`); return; }
+  if (sp.level >= 1 && !freeMark && !freeArmor && !canAfford(c, sp.level)) { c.sys(`Not enough spell power: ${sp.name} costs ${sp.level}, you have ${pc.slots.max - pc.slots.used} of ${pc.slots.max}. It comes back after a ${pc.cls === 'warlock' ? 'short' : 'long'} rest.`); return; }
   if (sp.id === 'divine_smite') { playerSmite(c); return; }
   if (!cb) { castOutside(c, sp.id, targetName); return; }
   // range and area
@@ -743,13 +829,14 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
   if (offensive) {
     const meU = pcUnit(c);
     const g = gridOf(c);
-    if (sp.aoe && SELF_AREA.has(sp.id)) {
-      areaTargets = livingFoes(c).filter((f) => dist(at(f), at(meU)) <= 3 && hasLOS(g, at(meU), at(f))).slice(0, sp.aoe + 1);
+    const selfR = sp.area === 'self' ? (sp.radius ?? 3) : 3;
+    if (sp.aoe && (SELF_AREA.has(sp.id) || sp.area === 'self')) {
+      areaTargets = livingFoes(c).filter((f) => dist(at(f), at(meU)) <= selfR && hasLOS(g, at(meU), at(f))).slice(0, sp.aoe + 1);
       if (!areaTargets.length) {
         const t0 = resolveTarget(c, targetName);
         if (t0) { const r = closeIn(c, t0, 2, true, false); if (r === 'stuck' && !c.s.combat) return; }
-        areaTargets = livingFoes(c).filter((f) => dist(at(f), at(meU)) <= 3 && hasLOS(g, at(meU), at(f))).slice(0, sp.aoe + 1);
-        if (!areaTargets.length) { c.sys(`${sp.name} reaches 15 feet from you. Nobody's that close.`); return; }
+        areaTargets = livingFoes(c).filter((f) => dist(at(f), at(meU)) <= selfR && hasLOS(g, at(meU), at(f))).slice(0, sp.aoe + 1);
+        if (!areaTargets.length) { c.sys(`${sp.name} reaches ${selfR * 5} feet from you. Nobody's that close.`); return; }
       }
     } else {
       const t0 = resolveTarget(c, targetName);
@@ -757,7 +844,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
       const reach = (sp.ranged === false && sp.kind === 'attack') || sp.id === 'inflict_wounds' ? 1 : sp.kind === 'attack' ? 24 : 12;
       const r = closeIn(c, t0, reach, true, false);
       if (r !== 'ok') return;
-      if (sp.aoe) areaTargets = [t0, ...livingFoes(c).filter((f) => f !== t0 && dist(at(f), at(t0)) <= 2)].slice(0, sp.aoe);
+      if (sp.aoe) areaTargets = [t0, ...livingFoes(c).filter((f) => f !== t0 && (sp.id === 'chain_lightning' ? dist(at(f), at(t0)) <= 6 : dist(at(f), at(t0)) <= (sp.radius ?? 2)))].slice(0, sp.aoe);
     }
   }
   if (!useAction(c, !!sp.bonusAction)) return;
@@ -766,9 +853,21 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
   const dc = spellDC(pc) + (has(me, 'sorcery') ? 1 : 0);
   const sm = spellMod(pc);
   const undeadBonus = (t: Combatant) => (pc.cls === 'cleric' && pc.options.god === 'keeper' && sp.dtype === 'radiant' && isUndead(t) ? 2 : 0);
+  const tier = sp.level === 0 ? cantripTier(pc.level) : 1;
+  const dmgExpr = sp.damage ? scaleDice(sp.damage, tier) : '0';
+  let modAdded = false;
+  const spellBonus = (t: Combatant, base: DamageType, crit: boolean) => {
+    let extra = 0;
+    if (!modAdded && hasPerk(c, 'spell_mod') && sp.damage) { modAdded = true; extra += Math.max(0, sm); }
+    for (const f of strikeExtras(c, t, 'spell', base, crit, t.hp < t.maxHp, sp.level === 0)) extra += f.dmg;
+    return extra;
+  };
+  if (sp.special && SPECIALS[sp.special]) { SPECIALS[sp.special](c, sp, targetName); afterPlayerAction(c); return; }
   if (sp.kind === 'attack') {
     let t = resolveTarget(c, targetName);
-    if (!t) { c.sys('No target.'); cb.usedAction = false; if (sp.level) pc.slots.used -= 1; return; }
+    if (!t) { c.sys('No target.'); cb.usedAction = false; if (sp.level) pc.slots.used -= sp.level; return; }
+   for (let ray = 0; ray < (sp.rays ?? 1); ray++) {
+    if (ray > 0) { const nt = livingFoes(c).find((u) => u === t) ?? livingFoes(c)[0]; if (!nt) break; t = nt; }
     const adv = combineAdv(has(me, 'hidden') || has(t, 'guided') || has(t, 'faerie') || has(t, 'restrained') || has(me, 'sorcery'), has(me, 'prone'));
     del(t, 'guided'); del(me, 'hidden');
     const r = d20(c.rng, adv);
@@ -778,7 +877,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
     c.out('roll', `🎲 ${sp.name} vs ${t.name}: ${r.rolls.length > 1 ? `(${r.rolls.join(',')}) ` : ''}${r.natural} ${fmtMod(spellAttack(pc))} = ${tot} vs AC ${t.ac}${crit ? ' — CRITICAL!' : hit ? ' — hit' : ' — miss'}`);
     if (!hit) { c.out('miss', `Your ${sp.name.toLowerCase()} goes wide.`); }
     else {
-      let d = roll(c.rng, sp.damage!, crit).total + undeadBonus(t);
+      let d = roll(c.rng, dmgExpr, crit).total + undeadBonus(t) + spellBonus(t, sp.dtype as DamageType, crit);
       let dtype = sp.dtype as DamageType;
       if (sp.id === 'eldritch_blast' && (pc.options.invocation === 'agonizing' || pc.options.invocation2 === 'agonizing')) d += Math.max(0, sm);
       if (sp.id === 'wild_spark') { const el = pick(c.rng, ['fire', 'cold', 'lightning', 'acid', 'thunder', 'poison'] as DamageType[]); dtype = el; d += roll(c.rng, '1d6').total; }
@@ -791,6 +890,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
       if (!down(tt)) c.sys(`${tt.name}: ${hpWord(tt)}.`);
     }
     c.s.lastTarget = t.key;
+   }
   } else if (sp.kind === 'save') {
     const targets = sp.aoe ? (areaTargets ?? livingFoes(c).slice(0, sp.aoe)) : [resolveTarget(c, targetName)].filter(Boolean) as Combatant[];
     if (!targets.length) { c.sys('No target.'); return; }
@@ -799,9 +899,10 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
       const def = mdef(t)!;
       const sv = d20(c.rng).natural + mod(def.abilities[sp.save!]);
       const ok = sv >= dc;
-      let dice = sp.damage!;
-      if (sp.id === 'knell' && t.hp < t.maxHp) dice = '1d12';
-      let d = roll(c.rng, dice).total + undeadBonus(t);
+      let dice = dmgExpr;
+      if (sp.id === 'knell' && t.hp < t.maxHp) dice = scaleDice('1d12', tier);
+      let d = roll(c.rng, dice).total + undeadBonus(t) + spellBonus(t, sp.dtype as DamageType, false);
+      if (sp.id === 'disintegrate' && !ok) { /* full */ }
       if (sp.id === 'knell' && pc.options.patron === 'unremembered') d += roll(c.rng, '1d4').total;
       if (ok) d = sp.halfOnSave ? Math.floor(d / 2) : 0;
       c.out('roll', `🎲 ${t.name} ${sp.save!.toUpperCase()} save ${sv} vs DC ${dc}: ${ok ? 'saved' : 'failed'}`);
@@ -834,7 +935,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
   } else if (sp.kind === 'heal') {
     const target = targetName && !/^(me|myself|self)$/.test(targetName) ? (resolveTarget(c, targetName, 'party') ?? me) : me;
     if (target.companion === 'alistair') { c.narr('Healing light washes over Alistair, and he yelps. "OW. Brother. Undead. That\'s the opposite of what I need."'); afterPlayerAction(c); return; }
-    const h = roll(c.rng, sp.damage!).total + Math.max(0, sm) + (pc.cls === 'cleric' && pc.options.god === 'hearth' ? 2 : 0);
+    const h = roll(c.rng, sp.damage!).total + Math.max(0, sm) + (pc.cls === 'cleric' && pc.options.god === 'hearth' ? 2 : 0) + (hasPerk(c, 'heal_bonus') ? 2 + sp.level : 0);
     healUnit(c, target, h);
     c.out('good', `${sp.name}: ${target.isPc ? 'you heal' : `${target.name} heals`} ${h} HP.`);
   } else if (sp.kind === 'buff') {
@@ -858,6 +959,61 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
 
 function natural8(c: Ctx) { return die(c.rng, 8) >= 5; }
 
+const SPECIALS: Record<string, (c: Ctx, sp: typeof SPELLS[string], target?: string) => void> = {
+  teleport: (c) => {
+    const me = pcUnit(c); const g = gridOf(c);
+    const occ = occupied(c, me);
+    let best: Pt | null = null; let score = -1;
+    for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+      const p = { x: me.x + dx, y: me.y + dy };
+      if (p.x < 0 || p.y < 0 || p.x >= g.w || p.y >= g.h || occ.has(pkey(p)) || '#=TBbHPASgrtwCKNFcL;'.includes(g.tiles[p.y][p.x]) || exitAt(g, p) !== null) continue;
+      const sc = Math.min(...livingFoes(c).map((f) => dist(at(f), p)), 99);
+      if (sc > score) { score = sc; best = p; }
+    }
+    if (best) { me.x = best.x; me.y = best.y; c.out('good', 'Silver mist swallows you and spits you out somewhere safer.'); }
+  },
+  weapon: (c) => { add(pcUnit(c), 'spiritual'); c.out('good', 'A weapon of light appears beside you, hungry for work.'); },
+  guardians: (c) => { add(pcUnit(c), 'guardians'); c.out('good', 'Spectral soldiers of the old faith fall in around you.'); },
+  haste: (c) => { add(pcUnit(c), 'hasted'); c.pc.conditions.push('hasted' as never); c.out('good', 'Time slows for everyone but you. (+2 AC, double speed, an extra attack each turn.)'); },
+  invisible: (c, sp) => { add(pcUnit(c), 'hidden'); if (sp.level >= 4) add(pcUnit(c), 'invisible'); c.out('good', 'You fade out of sight.'); },
+  blur: (c) => { add(pcUnit(c), 'blurred'); c.out('good', 'Your outline smears and doubles.'); },
+  mantle: (c) => { add(pcUnit(c), 'mantle'); c.out('good', 'Holy light shimmers on every weapon on your side.'); },
+  brand: (c, sp) => { add(pcUnit(c), sp.id === 'staggering_smite' ? 'staggering' : 'branded'); c.out('good', 'Your weapon begins to burn with light. Your next hit will mark them.'); },
+  ward: (c) => { add(pcUnit(c), 'warded'); c.out('good', 'A cold hand that isn\'t death settles on your shoulder.'); },
+  aid: (c) => { for (const u of c.s.combat!.units.filter((x) => x.side === 'party' && !has(x, 'dead'))) { healUnit(c, u, 5); if (u.isPc) c.pc.tempHp = Math.max(c.pc.tempHp, 5); } c.out('good', 'Strength floods into you and your companions. (+5 HP, +5 temporary HP.)'); },
+  mass_heal: (c, sp) => {
+    for (const u of c.s.combat!.units.filter((x) => x.side === 'party' && !has(x, 'dead'))) {
+      if (u.companion === 'alistair') { c.narr('Alistair ducks the healing light. "Not for me, brother!"'); continue; }
+      const h = Math.min(roll(c.rng, sp.damage ?? '2d4').total + Math.max(0, spellMod(c.pc)) + (hasPerk(c, 'heal_bonus') ? 2 + sp.level : 0), u.maxHp);
+      healUnit(c, u, h); c.out('good', `${u.isPc ? 'You heal' : `${u.name} heals`} ${h}.`);
+    }
+  },
+  raise: (c) => {
+    const fallen = c.s.combat!.units.find((u) => u.side === 'party' && !u.isPc && has(u, 'unconscious'));
+    if (!fallen) { c.sys('Nobody on your side has fallen.'); return; }
+    healUnit(c, fallen, Math.max(1, Math.floor(fallen.maxHp / 2)));
+    c.out('good', `${fallen.name} gasps back to life.`);
+  },
+  drain: (c, sp, target) => {
+    const t = resolveTarget(c, target); if (!t) return;
+    const r = d20(c.rng).natural + spellAttack(c.pc);
+    if (r < t.ac) { c.out('miss', `Your ${sp.name.toLowerCase()} misses ${t.name}.`); return; }
+    const d = roll(c.rng, sp.damage!).total;
+    hurtFoe(c, t, d, 'necrotic', { before: (x) => c.out('hit', `You drink ${x} life from ${t.name}.`) });
+    c.pc.hp = Math.min(c.pc.maxHp, c.pc.hp + Math.floor(d / 2)); pcUnit(c).hp = c.pc.hp;
+  },
+  pwk: (c, sp, target) => {
+    const t = resolveTarget(c, target); if (!t) return;
+    if (t.hp <= 100) { c.out('hit', `You speak the word. ${t.name} stops.`); hurtFoe(c, t, t.hp + 999, 'psychic', { crit: true }); }
+    else c.out('miss', `${t.name} is too strong for the word to kill.`);
+  },
+  rite: (c) => {
+    if (!c.s.combat!.units.some((u) => u.monster === 'vessariel')) { c.sys('The Rite has nothing to unname here.'); return; }
+    c.set('rite_attempted', true);
+    c.out('hit', 'You begin the Rite of Holy Forgetting. The words come out of you like old bells.');
+  },
+};
+
 function applyEffect(c: Ctx, t: Combatant, e: string) {
   if (e === 'restrained') { add(t, 'restrained'); c.out('good', `Grasping weeds wrap ${t.name}. It's restrained.`); }
   else if (e === 'frightened') { add(t, 'frightened'); c.out('good', `${t.name} sees something you can't, and cowers.`); }
@@ -868,6 +1024,8 @@ function applyEffect(c: Ctx, t: Combatant, e: string) {
   else if (e === 'faerie') { add(t, 'faerie'); c.out('good', `${t.name} is outlined in violet light. Attacks against it have advantage.`); }
   else if (e === 'mocked' || e === 'frostbit') { add(t, e as Condition); c.sys(`${t.name} has disadvantage on its next attack.`); }
   else if (e === 'pushed') { c.narr(`${t.name} is knocked back several feet.`); }
+  else if (e === 'paralyzed') { add(t, 'paralyzed'); c.out('good', `${t.name} locks rigid, unable to move. Hits on it are brutal.`); }
+  else if (e === 'banished') { add(t, 'fled'); c.out('good', `${t.name} blinks out of the world.`); }
 }
 
 function saveLine(id: string) {
@@ -1163,17 +1321,23 @@ export function playerUnjam(c: Ctx) {
   if (c.s.combat) afterPlayerAction(c);
 }
 
-export function playerUsePotion(c: Ctx, targetName?: string) {
+export function playerUsePotion(c: Ctx, targetName?: string, which?: string) {
   const pc = c.pc;
-  if (!hasItem(pc, 'potion_healing')) { c.sys('You have no healing potions.'); return; }
+  const potions = pc.inventory.filter((x) => ITEMS[x.id]?.kind === 'potion' && ITEMS[x.id].heal);
+  if (!potions.length) { c.sys('You have no healing potions.'); return; }
+  const w = (which ?? '').toLowerCase();
+  const missing = pc.maxHp - pc.hp;
+  const pst = potions.find((x) => w && (ITEMS[x.id].name.toLowerCase().includes(w.replace(/potion( of)?/, '').trim() || '#') || ITEMS[x.id].aliases?.some((a) => w.includes(a))))
+    ?? potions.slice().sort((a, b) => (ITEMS[a.id].price - ITEMS[b.id].price)).find((x) => roll({ state: 1 }, ITEMS[x.id].heal!).total >= Math.min(missing, 10)) ?? potions[0];
+  const potionId = pst.id;
   const cb = c.s.combat;
   let target: Combatant | null = cb ? pcUnit(c) : null;
   if (targetName && !/^(me|myself|self)$/.test(targetName) && cb) target = resolveTarget(c, targetName, 'party');
   const self = !target || target.isPc;
   if (!cb && pc.hp >= pc.maxHp && self) { c.sys('You\'re not hurt. Save it.'); return; }
   if (cb && !useAction(c, self)) return;
-  removeItem(pc, 'potion_healing');
-  const h = roll(c.rng, '2d4+2').total;
+  removeItem(pc, potionId);
+  const h = roll(c.rng, ITEMS[potionId].heal!).total;
   if (cb && target) healUnit(c, target, h);
   else pc.hp = Math.min(pc.maxHp, pc.hp + h);
   c.out('good', `${self ? 'You drink' : `You pour the potion into ${target!.name}`}: +${h} HP.${self ? ` (${pc.hp}/${pc.maxHp})` : ''}`);
@@ -1287,6 +1451,7 @@ function foeAct(c: Ctx, u: Combatant) {
   const def = mdef(u)!;
   if (has(u, 'frightened')) { c.narr(`${u.name} cowers.`); if (die(c.rng, 4) === 1) { del(u, 'frightened'); c.narr(`${u.name} shakes off its fear.`); } return; }
   if (has(u, 'asleep')) { c.narr(`${u.name} snores.`); return; }
+  if (has(u, 'paralyzed')) { if (die(c.rng, 3) === 1) { del(u, 'paralyzed'); c.narr(`${u.name} wrenches free of the paralysis.`); } else c.narr(`${u.name} strains against invisible bonds.`); return; }
   if (has(u, 'charmed')) { c.narr(`${u.name} hesitates, smiling at you uncertainly.`); return; }
   if (has(u, 'halted')) { del(u, 'halted'); c.narr(`${u.name} stands frozen, obeying your command.`); return; }
   if (has(u, 'restrained')) {
@@ -1331,7 +1496,12 @@ function foeAct(c: Ctx, u: Combatant) {
     if (best) walk(c, u, pathTo(map, best), speedSq);
     if (!c.s.combat || down(u)) return;
   }
-  foeStrike(c, u, target);
+  const n = def.multiattack ?? 1;
+  for (let i = 0; i < n; i++) {
+    if (!c.s.combat || down(u)) break;
+    if (down(target) || dist(at(u), at(target)) > reach) { const nt = party.find((p) => !down(p) && dist(at(p), at(u)) <= reach); if (!nt) break; target = nt; }
+    foeStrike(c, u, target);
+  }
 }
 
 function foeStrike(c: Ctx, u: Combatant, target: Combatant) {
@@ -1344,7 +1514,8 @@ function foeStrike(c: Ctx, u: Combatant, target: Combatant) {
   del(u, 'mocked'); del(u, 'frostbit');
   const cover = coverBonus(g, at(u), at(target), c.s.combat!.units.filter((x) => x !== u && x !== target && !out(x)).map(at));
   const crowded = !!atk.ranged && adjacentFoesOf(c, u).length > 0;
-  const adv = combineAdv(!!packAlly || (has(target, 'prone') && !atk.ranged) || (!!target.isPc && has(target, 'reckless')), has(target, 'dodging') || grappledOther || debuffed || has(u, 'restrained') || crowded || (!!atk.ranged && has(target, 'prone')));
+  const unseen = !!target.isPc && (has(target, 'blurred') || has(target, 'invisible') || has(target, 'hidden'));
+  const adv = combineAdv(!!packAlly || (has(target, 'prone') && !atk.ranged) || (!!target.isPc && has(target, 'reckless')), has(target, 'dodging') || grappledOther || debuffed || has(u, 'restrained') || crowded || unseen || (!!atk.ranged && has(target, 'prone')));
   const r = d20(c.rng, adv);
   const ac = (target.isPc ? pcAC(c) : target.ac) + cover;
   const tot = r.natural + atk.toHit;
@@ -1415,7 +1586,7 @@ function syncAfterCombat(c: Ctx) {
   c.s.pos = cb.loc === c.s.loc ? { x: me.x, y: me.y } : null;
   c.pc.hp = Math.max(0, me.hp);
   for (const u of cb.units) if (u.companion) c.s.companionHp[u.companion] = has(u, 'unconscious') ? 1 : u.hp;
-  c.pc.conditions = c.pc.conditions.filter((x) => x !== 'shillelagh');
+  c.pc.conditions = c.pc.conditions.filter((x) => x !== 'shillelagh' && x !== 'hasted');
   c.advance(1);
 }
 

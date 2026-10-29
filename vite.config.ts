@@ -11,7 +11,7 @@ function serviceWorker(): Plugin {
     apply: 'build',
     generateBundle(_opts, bundle) {
       const files = Object.keys(bundle).filter((f) => !f.endsWith('.map'));
-      const assets = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', ...files.map((f) => './' + f)];
+      const assets = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './lahti-map.webp', ...files.map((f) => './' + f)];
       const src = readFileSync('./src/sw-template.js', 'utf8')
         .replace('__CACHE__', JSON.stringify('hams-' + BUILD))
         .replace('__ASSETS__', JSON.stringify(Array.from(new Set(assets))));

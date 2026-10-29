@@ -102,10 +102,13 @@ export interface MonsterDef {
   desc: string;
   aliases?: string[];
   surrenderAt?: number; // hp threshold
+  multiattack?: number; // attacks per turn
+  cr?: number; // challenge rating, for encounter building
 }
 
 export type Condition = 'prone' | 'unconscious' | 'stable' | 'dead' | 'frightened' | 'dodging' | 'grappled' | 'surrendered' | 'fled' | 'hidden' | 'blessed' | 'shielded' | 'guided' | 'taunted'
-  | 'raging' | 'restrained' | 'charmed' | 'asleep' | 'halted' | 'marked' | 'hexed' | 'inspired' | 'sorcery' | 'reckless' | 'wildshape' | 'shield_spell' | 'favored' | 'mocked' | 'faerie' | 'frostbit' | 'shifted' | 'shell' | 'divine_favor' | 'fury' | 'jaws' | 'cry' | 'surprised' | 'charged' | 'shillelagh' | 'acted' | 'ko';
+  | 'raging' | 'restrained' | 'charmed' | 'asleep' | 'halted' | 'marked' | 'hexed' | 'inspired' | 'sorcery' | 'reckless' | 'wildshape' | 'shield_spell' | 'favored' | 'mocked' | 'faerie' | 'frostbit' | 'shifted' | 'shell' | 'divine_favor' | 'fury' | 'jaws' | 'cry' | 'surprised' | 'charged' | 'shillelagh' | 'acted' | 'ko'
+  | 'paralyzed' | 'spiritual' | 'guardians' | 'hasted' | 'invisible' | 'blurred' | 'mantle' | 'branded' | 'staggering' | 'warded';
 
 export interface Combatant {
   key: string; // unique in fight
@@ -139,6 +142,7 @@ export interface Combat {
   sneakUsed: boolean;
   fleeTo?: string;
   moveLeft: number; // feet of movement left this turn (player)
+  attacksLeft?: number; // extra attacks remaining from the Attack action
   dashed?: boolean;
   disengaged?: boolean;
   loc: string; // map id
@@ -169,7 +173,7 @@ export interface Character {
   armorProf: ('light' | 'medium' | 'heavy' | 'shield')[];
   cantrips: string[];
   spells: string[];
-  slots: SpellSlots; // level-1 slots only in v0.1
+  slots: SpellSlots; // spell points: a spell costs its level
   resources: Record<string, { max: number; used: number; per: 'short' | 'long' }>;
   inventory: Stack[];
   equipped: { main?: string; offhand?: string; armor?: string; shield?: string; ranged?: string; worn: string[] };
@@ -185,6 +189,9 @@ export interface Character {
   life: Record<string, string>; // life-path results
   drunk: number; // 0 sober, 1-2 tipsy, 3-4 drunk, 5+ passed out
   wildHp: number; // druid beast form temporary hit points
+  perks: string[]; // machine-readable feature tags (see data/progression.ts)
+  subclass?: string;
+  features: string[]; // names of features gained after level 2, for the sheet
 }
 
 export interface NpcMemory {
@@ -237,7 +244,27 @@ export interface GameState {
   pos: { x: number; y: number } | null; // where you stand on the current room's map
   explored: Record<string, string>; // per room: squares seen ('1') for fog of war
   bounty: number; // copper the Breda militia want from you
+  world: WorldState;
 }
+
+export interface SiteState {
+  id: string;
+  name: string;
+  kind: string; // theme
+  x: number;
+  y: number;
+  level: number;
+  seed: number;
+  rooms: number;
+  near: string; // town id it hangs off
+  poi?: string; // named place id
+  cleared?: boolean;
+}
+export interface Job { id: string; town: string; kind: 'clear' | 'bounty' | 'deliver' | 'fetch'; title: string; text: string; reward: number; site?: string; dest?: string; taken?: boolean; done?: boolean; paid?: boolean; posted: number; item?: string }
+export interface Front { id: string; name: string; clock: number; max: number; active: boolean; ended?: boolean; lastTick: number; omens: number[] }
+export interface Property { id: string; town: string; type: 'tavern' | 'shop' | 'farm' | 'house' | 'smithy'; name: string; upgrades: string[]; staff: string[]; cash: number; rep: number; lastDay: number; events: number }
+export interface Journey { route: string[]; legs: number[]; leg: number; day: number; dest: string }
+export interface WorldState { at: string; visited: string[]; found: string[]; sites: Record<string, SiteState>; journey: Journey | null; jobs: Job[]; fronts: Record<string, Front>; properties: Property[]; nextId: number; seed: number; renown: number }
 
 export interface PropState {
   id: string;

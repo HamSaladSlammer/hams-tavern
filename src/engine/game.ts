@@ -7,7 +7,7 @@ import { ITEMS, MONSTERS, SPELLS, XP_FOR_LEVEL, FEATS } from './srd';
 import type { Ability, CreationSpec, GameState, LogLine, NpcMemory, Skill } from './types';
 import { ABILITIES } from './types';
 import {
-  addItem, am, armorClass, cls, createFromSpec, fmtMoney, itemName, species as speciesOf, hasItem, prof, removeItem, saveBonus, skillBonus,
+  addItem, am, armorClass, cls, createFromSpec, chooseSubclass, fmtMoney, itemName, species as speciesOf, hasItem, prof, removeItem, saveBonus, skillBonus,
   spellAttack, spellDC, weaponById, weaponDamageExpr, weaponToHit, xpToNext, species as spOf, background as bgOf, rollHitDie,
 } from './character';
 import { parse, type Intent } from '../nlp/parse';
@@ -15,7 +15,9 @@ import { classifySpeech } from '../nlp/profanity';
 import { askOracle, guessOdds } from './oracle';
 import * as Combat from './combat';
 import * as Act from './actions';
+import { subclassById, subclassesFor, attacksPerAction } from '../data/progression';
 import * as Freedom from '../content/freedom';
+import * as World from '../world';
 Freedom.installFreedom();
 import { gridFor, freeNear, costs, pathTo, key as pkey, exitAt, visibleFrom, approachSquare, TILE_NAMES, type Pt } from './grid';
 
@@ -27,7 +29,7 @@ export function newState(seed = Date.now() >>> 0): GameState {
     version: SAVE_VERSION, rng: { state: seed }, phase: 'title', creation: { step: 'name' }, pc: null,
     loc: 'tavern', minutes: START_MIN, flags: {}, npc: {}, companions: [], companionHp: {}, combat: null,
     roomFoes: {}, roomItems: {}, talkingTo: null, lastTarget: null, chaos: 5, log: [], journal: [],
-    stats: { kills: 0, knockouts: 0, insults: 0 }, props: {}, lastObject: null, pos: null, explored: {}, bounty: 0,
+    stats: { kills: 0, knockouts: 0, insults: 0 }, props: {}, lastObject: null, pos: null, explored: {}, bounty: 0, world: World.newWorld(seed),
   };
 }
 
@@ -62,7 +64,7 @@ function makeCtx(s: GameState, lines: LogLine[]): Ctx {
     pay: (cp) => { if (s.pc!.copper < cp) return false; s.pc!.copper -= cp; return true; },
     xp: (n) => {
       const pc = s.pc!; pc.xp += n; push('good', `+${n} XP`);
-      if (pc.level < 2 && pc.xp >= xpToNext(pc) && !s.flags.level_hint) { s.flags.level_hint = true; push('sys', 'You feel ready to grow. Rest at the Smoking Barrel and Squib will see it. (Level 2 waits for you there.)'); }
+      if (pc.level < 20 && pc.xp >= xpToNext(pc) && s.flags.level_hint !== pc.level) { s.flags.level_hint = pc.level; push('sys', `You feel ready to grow. (Level ${pc.level + 1} comes with your next long rest.)`); }
     },
     fight: (id) => Combat.startCombat(c, id),
     move: (to, o = {}) => moveTo(c, to, o.quiet),
@@ -148,13 +150,14 @@ function advanceTime(c: Ctx, m: number) {
   // crossed midnight? (midnight is when (minutes + 480) % 1440 == 0)
   const mid = (x: number) => Math.floor((x + 480) / 1440);
   if (mid(s.minutes) > mid(before)) {
-    if (!c.flag('bell_silenced')) {
+    if (!c.flag('bell_silenced') && !s.world?.journey) {
       const near = ['thornwood', 'kessels_rest', 'foothills', 'chapel_yard', 'nave', 'vestry', 'crypt', 'breda_square', 'tavern'].includes(s.loc);
       if (near) c.out('bad', s.loc === 'tower' ? '' : 'Midnight. Far off, from the hills, a bell begins to toll. Slow, patient, wrong.');
       if (c.flag('cleared_yard') && s.loc !== 'chapel_yard') { c.set('cleared_yard', false); }
     } else if (!c.flag('first_quiet_midnight')) {
       c.set('first_quiet_midnight');
     }
+    if (s.world && s.pc) World.onNewDay(c);
   }
 }
 
@@ -191,6 +194,7 @@ function describe(c: Ctx, full = true) {
 
 function moveTo(c: Ctx, to: string, quiet = false) {
   const s = c.s;
+  World.ensureRoom(s, to);
   if (!ROOMS[to]) return;
   const from = s.loc;
   c.set('prev_loc', s.loc);
@@ -199,6 +203,7 @@ function moveTo(c: Ctx, to: string, quiet = false) {
   placeOnArrival(c, from);
   if (!quiet) describe(c, true);
   const r = ROOMS[to];
+  World.syncAt(s);
   r.onEnter?.(c);
   if (!c.s.combat) Freedom.militiaCheck(c);
 }
@@ -283,7 +288,10 @@ function findExit(c: Ctx, dest: string) {
 function go(c: Ctx, dest: string) {
   if (c.s.combat) { c.sys('You\'re in a fight. Try "flee" to run.'); return; }
   const ex = findExit(c, dest);
+  if (ex && ex.to.startsWith('travel:')) { World.travel(c, ex.to.slice(7)); return; }
   if (!ex) {
+    const far = dest ? World.matchDestination(c.s, dest) : null;
+    if (far && dest.length > 2) { World.travel(c, far); return; }
     if (dest && /^(climb|jump|run|step|hop|cross|wade|swim)/.test(RAW.toLowerCase()) && Act.freeAction(c, W, RAW)) return;
     if (dest && (matchFeature(c, dest) || Act.findProp(c, dest, false))) { c.narr(`You walk over to the ${dest}.`); c.s.lastObject = dest; return; }
     c.sys(dest ? `You can't go "${dest}" from here.` : 'Go where?'); listExits(c); return;
@@ -732,7 +740,7 @@ function rest(c: Ctx, kind: 'short' | 'long') {
     for (const id of c.s.companions) c.s.companionHp[id] = (Combat.COMPANIONS[id]?.maxHp ?? 10);
     c.set('one_more_round_used', false);
     c.good(`You sleep, and wake rested. HP ${pc.hp}/${pc.maxHp}. Spells and abilities restored. (${clock(c.s)})`);
-    if (r.id === 'tavern') maybeLevel(c);
+    maybeLevel(c);
     return;
   }
   // short rest: 1 hour, spend hit dice until healthy
@@ -777,12 +785,17 @@ function sheet(c: Ctx) {
   const unarmed = weaponById('unarmed')!;
   const atk = [main, ranged, unarmed].filter(Boolean).map((w) => `${w!.name} ${fmtMod(weaponToHit(pc, w!))} (${weaponDamageExpr(pc, w!)} ${w!.dtype})${w!.category === 'firearm' ? ` [${pc.ammo[w!.id] ?? 0}/${w!.capacity}${c.flag(`jam_${w!.id}`) ? ', JAMMED' : ''}]` : ''}`);
   c.narr('Attacks: ' + atk.join(' · '));
-  if (pc.cantrips.length || pc.spells.length) c.narr(`Spells (attack ${fmtMod(spellAttack(pc))}, DC ${spellDC(pc)}): cantrips ${pc.cantrips.map((s) => SPELLS[s].name).join(', ')}${pc.spells.length ? `; level 1 (${pc.slots.max - pc.slots.used}/${pc.slots.max} slots) ${pc.spells.map((s) => SPELLS[s].name).join(', ')}` : ''}`);
+  if (pc.cantrips.length || pc.spells.length) c.narr(`Spells (attack ${fmtMod(spellAttack(pc))}, DC ${spellDC(pc)}): cantrips ${pc.cantrips.map((s) => SPELLS[s]?.name).join(', ')}${pc.spells.length ? `; spell power ${pc.slots.max - pc.slots.used}/${pc.slots.max} (a spell costs its level): ${pc.spells.slice().sort((a, b) => (SPELLS[a]?.level ?? 0) - (SPELLS[b]?.level ?? 0)).map((s) => `${SPELLS[s]?.name} (${SPELLS[s]?.level})`).join(', ')}` : ''}`);
   c.narr('Skills: ' + pc.skills.map((s) => `${s} ${fmtMod(skillBonus(pc, s))}`).join(', '));
   const feat = FEATS[pc.feat];
   c.narr(`Class (${k.title}): ` + [...(k.features[1] ?? []), ...(pc.level >= 2 ? k.features[2] ?? [] : [])].join(' · '));
   c.narr(`${sp.name}: ` + sp.traits.join(' · ') + (sp.power ? ` · ${sp.power.name}: ${sp.power.desc}` : ''));
   if (feat) c.narr(`Feat — ${feat.name}: ${feat.desc}`);
+  if (pc.subclass) { const sc = subclassById(pc.subclass); if (sc) c.narr(`${sc.name}: ${sc.blurb}`); }
+  else if (pc.level >= 3) c.sys(`Choose a subclass: ${subclassesFor(pc.cls).map((x) => x.name).join(' · ')}. (Say "choose <name>".)`);
+  if (pc.features?.length) c.narr('Later features: ' + pc.features.join(' · '));
+  const apa = attacksPerAction(pc.cls, pc.level, pc.perks ?? []);
+  if (apa > 1) c.narr(`Attacks per Attack action: ${apa}.`);
   c.narr('Solo Grit: +4 HP at level 1, for adventuring alone.');
   const res = Object.entries(pc.resources).map(([k2, v]) => `${k2.replace(/_/g, ' ')} ${v.max - v.used}/${v.max}`);
   if (res.length) c.narr('Resources: ' + res.join(' · '));
@@ -819,7 +832,11 @@ const HELP = `Type what you want to do, in plain words. Some examples:
 • Chain things: "take the mug, drink it, then go outside"
 • Anything else you can think of — the game will find a skill, roll it, and tell you what happens
 • ? Is anyone watching me — ask the oracle a yes/no question
-• sheet · inventory · journal · save`;
+• travel to Brumandell · continue · explore the area · open the map (or tap World)
+• read the notice board · take job 1 · any rumours? · threats
+• property for sale · buy the tavern · name it The Rusty Bell · upgrade · hire a cook · collect · work the bar
+• sheet · inventory · journal · save
+Nobody makes you follow the main story. Lahti keeps turning either way.`;
 
 function journal(c: Ctx) {
   c.out('title', 'Journal');
@@ -895,6 +912,10 @@ function withPronoun(c: Ctx, it: Intent): Intent {
 function dispatch(c: Ctx, it: Intent, raw: string) {
   const s = c.s;
   if (Freedom.militiaRespond(c, raw)) return;
+  if (World.respondToll(c, raw)) return;
+  if (!s.combat && worldCommand(c, raw)) return;
+  { const m = raw.match(/^(?:choose|become|follow|swear|take up|i choose)\s+(?:the\s+|a\s+|an\s+|to\s+)?(?:path of |college of |domain of |circle of |oath of |way of |school of )?(.+?)\s*(?:subclass)?$/i);
+    if (m && c.pc.level >= 3 && !c.pc.subclass) { const r = chooseSubclass(c.pc, m[1]); if (typeof r !== 'string') { for (const l of r) c.good(l); return; } if (/^choose/i.test(raw)) { c.sys(r); return; } } }
   c.set('subdue_intent', /\b(knock (him|her|them|it)? ?out|knock out|subdue|non-?lethal|don'?t kill|spare (his|her|their) li(fe|ves)|pull (my|your) punches)\b/i.test(raw));
   const cb = s.combat;
   // turn control
@@ -944,13 +965,13 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
     case 'finish': Combat.playerFinish(c, it.target); return;
     case 'drink': {
       const r = Act.drink(c, W, it.item);
-      if (r === 'potion') Combat.playerUsePotion(c);
+      if (r === 'potion') Combat.playerUsePotion(c, undefined, it.item);
       else if (r === 'use') use(c, 'black label');
       if (cb && r === true && s.combat) { s.combat.usedAction = true; Combat.afterPlayerAction(c); }
       return;
     }
     case 'eat': if (cb) { c.sys('No time to eat. Fight first.'); return; } Act.eat(c, W, it.item); return;
-    case 'use': if (/potion/.test(it.item)) { Combat.playerUsePotion(c, it.target); return; } use(c, it.item, it.target); return;
+    case 'use': if (/potion|elixir/.test(it.item)) { Combat.playerUsePotion(c, it.target, it.item); return; } use(c, it.item, it.target); return;
     case 'equip': equip(c, it.item); return;
     case 'unequip': unequip(c, it.item); return;
     case 'rest': rest(c, it.kind); return;
@@ -1197,6 +1218,72 @@ function combatStatus(c: Ctx) {
 }
 function hpDesc(hp: number, max: number) { if (hp <= 0) return 'down'; const f = hp / max; return f > 0.75 ? 'unhurt' : f > 0.4 ? 'hurt' : f > 0.15 ? 'badly hurt' : 'nearly finished'; }
 
+// ---------- the open world ----------
+function worldCommand(c: Ctx, raw: string): boolean {
+  const low = raw.toLowerCase().trim().replace(/[.!]+$/, '');
+  const s = c.s;
+  World.syncAt(s);
+  const town = s.world.at;
+  const inTown = !!World.townHubOf(town);
+  const atProp = s.loc.startsWith('prop:');
+  let m: RegExpMatchArray | null;
+  if ((m = low.match(/^(?:travel|journey|ride|walk|head|set out|set off|go|march|sail|trek|return)\s+(?:back\s+)?(?:to(?:ward|wards)?|for)\s+(.+)$/))) {
+    const dest = World.matchDestination(s, m[1]);
+    if (dest) { const ex = findExit(c, m[1]); if (ex && !ex.to.startsWith('travel:') && /^go\b/.test(low)) return false; World.travel(c, dest); return true; }
+    if (/^(travel|journey|ride|set out|set off|trek|sail)/.test(low)) { c.sys(`You don't know of anywhere called "${m[1]}". Open the World map to see where you can go.`); return true; }
+    return false;
+  }
+  if (/^(continue|keep going|keep travel+ing|press on|carry on|continue (the |my )?(journey|travel|on)|onward|resume (the |my )?(journey|travel))$/.test(low)) { if (!s.world.journey) return false; World.continueJourney(c); return true; }
+  if (/^(stop|abandon|cancel) (the |my )?(journey|travel+ing|trip)$/.test(low)) { if (s.world.journey) { s.world.journey = null; c.narr('You decide not to go on, for now.'); } else c.sys('You\'re not travelling.'); return true; }
+  if (/^(explore|explore (the )?(area|wilds|surroundings|region|countryside|land|woods|forest|hills)|scout( around| the area)?|wander( around| the wilds)?|go exploring|look for (adventure|trouble|dungeons|ruins)|search the (area|wilds|countryside))$/.test(low)) { World.explore(c); return true; }
+  if (/^(jobs|job board|work board|bounties|bounty board|notices|check (the )?(notice ?board|board|jobs|bounties)|look for (a )?(job|jobs|contracts?)|any (work|jobs)\??)$/.test(low) || (/^(read|check|look at|search) (the )?(notice ?board|board|notices)$/.test(low) && s.loc !== 'breda_square')) {
+    if (!inTown) { c.sys('Notice boards are in town squares.'); return true; }
+    World.board(c, town); return true;
+  }
+  if ((m = low.match(/^(?:take|accept|sign up for|do) (?:job|posting|notice|contract|bounty)\s*#?(\d)$/)) || (m = low.match(/^(?:take|accept) (?:the )?(first|second|third|fourth) (?:job|posting|notice|contract|bounty)$/))) {
+    const n = Number(m[1]) || ['first', 'second', 'third', 'fourth'].indexOf(m[1]) + 1;
+    World.takeJob(c, n); return true;
+  }
+  if (/^(my jobs|jobs taken|current jobs|active jobs)$/.test(low)) { const js = s.world.jobs.filter((j) => j.taken && !j.paid); c.sys(js.length ? js.map((j) => `${j.title} (${World.locName(s, j.town)})${j.done ? ': done, collect your pay there' : ''}`).join(' · ') : 'You have no jobs.'); return true; }
+  if (/^(rumou?rs?|any rumou?rs\??|ask (for|about) (rumou?rs?|news|gossip)|what'?s the news\??|hear any news\??|gossip|listen (for|to) (rumou?rs?|gossip|the room))$/.test(low)) {
+    if (s.loc === 'tavern' || /^town:[a-z_]+:inn$/.test(s.loc) || s.loc.startsWith('prop:')) { World.rumour(c, town); return true; }
+    if (inTown) { c.narr('The best gossip is in the inn.'); return true; }
+    return false;
+  }
+  if (/^(threats|fronts|world news|the state of the world|what'?s happening in the world|how is the world)$/.test(low)) { threats(c); return true; }
+  if (/^(where am i|where is this|location)$/.test(low)) { c.sys(`${World.locName(s, town)}${s.world.journey ? `, on the road to ${World.locName(s, s.world.journey.dest)}` : ''}. ${ROOMS[s.loc]?.name ?? ''}`); return true; }
+  // property
+  if (/^((property|properties|buildings|houses|land|real estate) (for sale|to buy)|what'?s for sale|look at (the )?propert(y|ies)|is there any property( for sale)?\??|buy (a )?propert(y|ies))$/.test(low)) { if (!inTown) { c.sys('Property is sold in towns.'); return true; } World.forSale(c, town); return true; }
+  if ((m = low.match(/^(?:buy|purchase|acquire)\s+(?:a |an |the |that |this |my own |our own )?(?:empty |old |little |small )?(tavern|inn|alehouse|pub|house|home|townhouse|farm|smallholding|shop|store|shopfront|smithy|forge)(?: for sale)?$/)) || (m = low.match(/^(?:open|start|run) (?:a |an |my own |our own )(tavern|inn|alehouse|pub|shop|store|farm|smithy|forge)$/))) {
+    if (!inTown) { c.sys('You can only buy property in a town.'); return true; }
+    const map: Record<string, 'tavern' | 'house' | 'farm' | 'shop' | 'smithy'> = { tavern: 'tavern', inn: 'tavern', alehouse: 'tavern', pub: 'tavern', house: 'house', home: 'house', townhouse: 'house', farm: 'farm', smallholding: 'farm', shop: 'shop', store: 'shop', shopfront: 'shop', smithy: 'smithy', forge: 'smithy' };
+    World.buyProperty(c, map[m[1]]); return true;
+  }
+  if ((m = raw.trim().match(/^(?:name|call|rename) (?:it|this place|the place|my (?:tavern|shop|farm|house|forge|place|property))\s+(?:to\s+)?(.+)$/i))) { if (!s.world.properties.length) return false; World.nameProperty(c, m[1]); return true; }
+  if (atProp) {
+    if ((m = low.match(/^(?:upgrade|build|improve|add|install)(?:\s+(?:a |an |the )?(.+))?$/))) { World.upgrade(c, m[1] ?? ''); return true; }
+    if ((m = low.match(/^(?:hire|employ|recruit)(?:\s+(?:a |an |some )?(.+))?$/))) { World.hire(c, m[1] ?? ''); return true; }
+    if (/^(collect|collect (the )?(takings|money|income|profits?)|empty the strongbox|check (the )?(books|takings|ledger))$/.test(low)) { World.collect(c); return true; }
+    if (/^(work|work the (bar|counter|shop|farm|forge)|tend (the )?bar|serve (drinks|customers)|run the (bar|place|shop))$/.test(low)) { World.workBar(c); return true; }
+    if (/^(sell (my |the |this )?(property|place|tavern|shop|farm|house|forge)|accept the (offer|buyout))$/.test(low)) { World.sellProperty(c); return true; }
+  }
+  if (/^(go (to )?(my )?(property|tavern|place|home|shop|farm|forge)|go home)$/.test(low) && s.world.properties.length) {
+    const here = s.world.properties.find((p) => p.town === town);
+    if (here) { moveTo(c, `prop:${here.id}`); return true; }
+    const p = s.world.properties[0];
+    World.travel(c, p.town); return true;
+  }
+  return false;
+}
+
+function threats(c: Ctx) {
+  const fr = Object.values(c.s.world.fronts).filter((f) => f.active);
+  c.out('title', 'The state of Lahti');
+  if (!fr.length) { c.narr('Nothing much is threatening Lahti that you know of. Enjoy it.'); return; }
+  for (const f of fr) c.narr(`${f.name}: ${f.ended ? 'over.' : `${'■'.repeat(f.clock)}${'□'.repeat(Math.max(0, f.max - f.clock))} ${f.clock >= f.max * 0.75 ? '(dire)' : f.clock >= f.max / 2 ? '(growing)' : '(simmering)'}`}`);
+  c.sys(`Renown: ${c.s.world.renown}. Places found: ${c.s.world.found.length}. Towns visited: ${c.s.world.visited.length} of 19.`);
+}
+
 // ---------- suggestions ----------
 export function suggestions(s: GameState): string[] {
   if (s.phase !== 'play' || !s.pc) return [];
@@ -1242,6 +1329,11 @@ export function suggestions(s: GameState): string[] {
   }
   const r = room(s);
   const out: string[] = [];
+  if (s.flags.toll_pending) out.push('pay the toll', 'talk our way past', 'intimidate them', 'fight');
+  if (s.world?.journey) out.push('continue', 'open the map');
+  if (s.loc.startsWith('prop:')) out.push('collect', 'work the bar', 'upgrade', 'hire staff');
+  if (s.loc === 'breda_square') out.push('open the map', 'jobs');
+  if (s.loc === 'tavern' || /^town:[a-z_]+:inn$/.test(s.loc)) out.push('any rumours?');
   if (s.flags.merah_surrendered && !s.flags.merah_gone && !s.flags.merah_dead && s.loc === 'tower') out.push('spare Merah', 'finish her');
   if (s.loc === 'tower' && !s.flags.bell_silenced && (s.flags.merah_gone || s.flags.merah_dead || s.flags.merah_talked_down)) out.push('cut the bell rope');
   if (s.talkingTo && NPCS[s.talkingTo]) {
@@ -1262,7 +1354,8 @@ export function suggestions(s: GameState): string[] {
   if (pc.hp < pc.maxHp && r.rest !== 'none') out.push(pc.hitDice > 0 ? 'short rest' : r.id === 'tavern' ? 'sleep' : 'drink potion');
   if (hasItem(pc, 'wolf_pelt') && s.loc === 'tailor') out.push('sell pelt');
   if (hasItem(pc, 'bone_amulet') && s.loc === 'tavern' && !s.flags.sold_amulet && s.flags.sereza_met) out.push('ask Sereza about the amulet');
-  for (const e of r.exits.filter((e) => !e.hidden?.(c) && !(e.blocked && e.to === r.id))) out.push(`go ${e.names[0]}`);
+  for (const e of r.exits.filter((e) => !e.hidden?.(c) && !(e.blocked && e.to === r.id))) out.push(e.to.startsWith('travel:') ? 'leave' : `go ${e.names[0]}`);
+  if (!s.world?.journey && /^(town:|breda_square)/.test(s.loc)) out.push('explore the area');
   out.push('look');
   return Array.from(new Set(out)).slice(0, 12);
 }
@@ -1270,7 +1363,7 @@ export function suggestions(s: GameState): string[] {
 export function statusLine(s: GameState) {
   if (!s.pc) return null;
   const pc = s.pc;
-  return { name: pc.name, hp: pc.hp, maxHp: pc.maxHp, ac: armorClass(pc), level: pc.level, gold: fmtMoney(pc.copper), clock: clock(s), place: ROOMS[s.loc]?.name ?? '', inCombat: !!s.combat, xp: pc.xp, slots: pc.slots.max ? `${pc.slots.max - pc.slots.used}/${pc.slots.max}` : null };
+  return { name: pc.name, hp: pc.hp, maxHp: pc.maxHp, ac: armorClass(pc), level: pc.level, gold: fmtMoney(pc.copper), clock: clock(s), place: s.world?.journey ? `On the road to ${World.locName(s, s.world.journey.dest)}` : ROOMS[s.loc]?.name ?? '', inCombat: !!s.combat, xp: pc.xp, slots: pc.slots.max ? `${pc.slots.max - pc.slots.used}/${pc.slots.max}` : null };
 }
 
 export { ROOMS, NPCS };
@@ -1291,11 +1384,16 @@ export function migrate(raw: unknown): GameState | null {
   const out: GameState = { ...fresh, ...s, flags: s.flags ?? {}, npc: s.npc ?? {}, stats: s.stats ?? fresh.stats, roomItems: s.roomItems ?? {}, companionHp: s.companionHp ?? {}, journal: s.journal ?? [], props: s.props ?? {}, lastObject: s.lastObject ?? null };
   if (out.pc) {
     const pc = out.pc;
+    pc.perks ??= []; pc.features ??= [];
     pc.options ??= {}; pc.feat ??= 'savage'; pc.look ??= ''; pc.backstory ??= ''; pc.life ??= {}; pc.drunk ??= 0; pc.wildHp ??= 0; pc.pronoun ??= 'they';
     if (!(pc.feat in FEATS)) { const map: Record<string, string> = {}; pc.feat = map[pc.feat] ?? 'savage'; }
   }
   if (out.phase === 'create' && !out.pc) out.phase = 'title';
   out.pos ??= null; out.explored ??= {}; out.bounty ??= 0;
+  World.migrateWorld(out);
+  World.ensureRoom(out, out.loc);
+  if (out.combat?.loc) World.ensureRoom(out, out.combat.loc);
+  if (!ROOMS[out.loc]) { out.loc = 'breda_square'; out.pos = null; }
   if (out.combat) { for (const u of out.combat.units) { u.x ??= 1; u.y ??= 1; } out.combat.moveLeft ??= 30; out.combat.loc ??= out.loc; }
   return out;
 }

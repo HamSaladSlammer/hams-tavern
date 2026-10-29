@@ -107,6 +107,7 @@ export interface Npc {
   give?: (c: Ctx, itemId: string) => boolean;
   attackable?: boolean; // if attacked outside combat, what happens is in onAttack
   onAttack?: (c: Ctx) => void;
+  fightAs?: string; // monster id used if someone picks a fight with them
 }
 
 export interface EncounterDef {

@@ -9,6 +9,16 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.4
+
+- **The world of Lahti.** Jared's map of Lahti is the World map (tap **World**). All 19 towns are real places you can travel to, each with a square, an inn with an innkeeper, a market with its own specialty stock (Tokarev Works rifles, Borschardt pistols, Largo "fish"), a watch captain and a notice board. Grog's chowder in Brumandell is as advertised.
+- **Discovery.** Dungeons, ruins, barrows, bandit camps, cult hideouts and battlefields are pinned to the map only when you find them: by exploring, from rumours in the inns, off the road, or from a job posting. Places are generated from a seed and scaled to your level; named places from the campaign (Greymarch Field, the Charmwright's Grove, the Sunken Ferry, the Erased Face, the Weeping Glacier, the Old Wyrm's lair) are hand-written.
+- **Travel.** Journeys take days. Each day on the road can bring an ambush, a toll, a traveller, or a place you didn't know about. Say "continue" to go on after a fight. Rest each night.
+- **Jobs.** Notice boards post clearing contracts, bounties, recoveries and deliveries. Take one, do it, collect in town.
+- **The story keeps going.** After the chapel, Act Two: three more bell towers (Coltale, Largo, Borschardt), the Old Vaults under Suomi and the Pale Queen herself, then Zenu at the Greenspire, and something worse than a queen under the Mire. Threats advance on their own clock whether you deal with them or not: the bells, a war with Makrovin, the Drinker Below. Type "threats" to see them.
+- **Own a piece of it.** Buy a house, farm, shop, forge or tavern in any town. Name it, build a kitchen, a stage or a still, hire a barkeep, a cook, a bouncer or a bard, work the bar yourself, and collect the takings. Thieves, famous bards, tax men and buyout offers turn up.
+- **Levels 1 to 20.** Every class to 20 with its features, Extra Attacks, ability score improvements, and three subclasses per class (choose at level 3: "choose Champion"). Spells up to 9th level. A bigger bestiary (ghouls to an adult wyrm) and better loot, including the firearms of the last war.
+
 ## What's new in v0.3
 
 - **Battle map.** Every room has a square grid map: walls, doors, furniture, tokens for you, your companions, townsfolk and monsters. Fog of war in dark places. Tap a square to walk, a person to talk, a thing to look at, climb, break or take, and a door to leave.

@@ -157,7 +157,7 @@ export function drink(c: Ctx, w: World, thing: string) {
   if (!st && !isIt) {
     const m = w.matchInventory(c, t);
     if (m && (ITEMS[m.id]?.kind === 'drink' || m.id === 'black_label')) st = m;
-    else if (m?.id === 'potion_healing') return 'potion';
+    else if (m && ITEMS[m.id]?.kind === 'potion') return 'potion';
     else if (m && (m.id === 'mug_empty' || m.id === 'bottle_empty')) { c.narr(`The ${ITEMS[m.id].name.toLowerCase()} is empty. You tip it back anyway and get one sad drop.`); if (c.s.loc === 'tavern') c.sys('("buy ale" for a refill.)'); return true; }
     else if (!m && /mug|ale|beer|pint|tankard|drink/.test(t)) st = drinks.find((s) => /mug|ale|stout|cider/.test(s.id)) ?? null;
   }

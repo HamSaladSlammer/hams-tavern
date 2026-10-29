@@ -2,6 +2,8 @@ import './ui/styles.css';
 import { handle, newState, suggestions, statusLine, peek, migrate, beginGame, mapView } from './engine/game';
 import { BattleMap } from './ui/map';
 import { openForge } from './ui/forge';
+import { WorldMap } from './ui/worldmap';
+import { worldView } from './world';
 import type { GameState, LogLine } from './engine/types';
 import { backend, SAVE_KEY, PREFS_KEY } from './ui/storage';
 
@@ -57,8 +59,13 @@ function refreshMap() {
   if (show) battle.update(v);
 }
 
+const worldEl = $('world');
+const world = new WorldMap(worldEl, (cmd) => send(cmd));
+function openWorld() { if (!state.pc || state.phase !== 'play') return; panel.hidden = true; world.open(worldView(state)); }
+
 function refresh() {
   refreshMap();
+  if (world.isOpen && state.pc) world.update(worldView(state));
   const st = statusLine(state);
   const stats = $('stats');
   if (st) {
@@ -97,6 +104,7 @@ function send(text: string) {
   const t = text.trim();
   if (!t) return;
   if (state.phase !== 'play') { startNew(); return; }
+  if (/^(open (the )?(world )?map|world map|world|show (me )?the (world )?map|look at (the|my) map|check (the|my) map|atlas)$/i.test(t)) { openWorld(); return; }
   if (t) { history.unshift(t); history.length = Math.min(history.length, 50); }
   histIdx = -1;
   const lines = handle(state, t);
@@ -158,6 +166,7 @@ function openPanel(kind: string) {
   panel.hidden = false;
 }
 document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => (b.onclick = () => {
+  if (b.dataset.panel === 'world') { openWorld(); return; }
   if (b.dataset.panel === 'map') { prefs.map = mapEl.hidden ? 'on' : (state.combat ? 'off' : 'combat'); applyPrefs(); refreshMap(); return; }
   openPanel(b.dataset.panel!);
 }));

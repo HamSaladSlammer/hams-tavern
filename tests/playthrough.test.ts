@@ -90,7 +90,7 @@ describe('Act One playthrough', () => {
       play(s, ['go tavern', 'persuade squib he acts on his own', 'persuade squib he acts on his own', 'talk to squib', 'sleep']);
       expect(s.flags.chapel_paid, LOG.slice(-3000)).toBe(true);
       expect(s.flags.act1_finale, LOG.slice(-2000)).toBe(true);
-      expect(s.pc!.level, LOG.slice(-2000)).toBe(2);
+      expect(s.pc!.level, LOG.slice(-2000)).toBeGreaterThanOrEqual(2);
       expect(LOG).not.toMatch(/a bug/i);
       expect(LOG).not.toMatch(/undefined|NaN|\[object/);
     });

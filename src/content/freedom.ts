@@ -11,7 +11,7 @@ import { gridFor } from '../engine/grid';
 import { lastFight } from '../engine/combat';
 
 const BREDA = new Set(['breda_square', 'tavern', 'goods', 'smithy', 'tailor', 'east_farms', 'thatch_barn', 'south_road']);
-export const inBreda = (c: Ctx) => BREDA.has(c.s.loc);
+export const inBreda = (c: Ctx) => BREDA.has(c.s.loc) || c.s.loc.startsWith('town:') || c.s.loc.startsWith('prop:');
 
 /** Which monster stands in for each townsperson, and who else gets involved. */
 const FIGHTERS: Record<string, { foes: [string, number][]; names?: string[]; lethalAllies?: [string, number][]; allyNames?: string[] }> = {
@@ -63,7 +63,7 @@ export function attackNpc(c: Ctx, np: Npc, raw: string): boolean {
     }
     c.set('confirm_kettle'); c.narr('Kettle looks up at you, tail slowing, not understanding. (Do it again if you mean it.)'); return true;
   }
-  const f = FIGHTERS[np.id];
+  const f = FIGHTERS[np.id] ?? (np.fightAs ? { foes: [[np.fightAs, 1]] as [string, number][], names: [np.name] } : undefined);
   if (!f) return false;
   if (c.npc(np.id).banned && np.id === 'squib' && false) return false;
   const lethal = !/\b(punch|kick|slap|headbutt|tackle|brawl|fist|fists|knee|elbow|shove|wrestle|knock (him|her|them)? ?out|knock out|subdue|beat up|bitch slap|smack|sock|deck|jab|uppercut|hook)\b/.test(low) && !/\bwith (a |my |the )?(mug|bottle|stool|chair|chair leg|fist|hands)\b/.test(low);
@@ -122,7 +122,8 @@ function afterFight(c: Ctx, npcIds: string[], lethal0: boolean) {
   c.set('brawl_escalated', false);
   const units = lastFight.units.filter((u) => u.side === 'foe');
   for (const id of npcIds) {
-    const mine = units.filter((u) => MONSTER_NPC[u.monster ?? ''] === id);
+    let mine = units.filter((u) => MONSTER_NPC[u.monster ?? ''] === id);
+    if (!mine.length && npcIds.length === 1) mine = units;
     if (!mine.length) continue;
     const allDead = mine.every((u) => u.conditions.includes('dead'));
     const anyDead = mine.some((u) => u.conditions.includes('dead'));
