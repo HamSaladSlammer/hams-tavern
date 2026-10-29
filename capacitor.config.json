@@ -1,0 +1,6 @@
+{
+  "appId": "com.hamsaladslammer.hamstavern",
+  "appName": "Hams Tavern",
+  "webDir": "dist",
+  "android": { "backgroundColor": "#17120d" }
+}

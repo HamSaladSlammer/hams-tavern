@@ -204,7 +204,9 @@ function toast(msg: string, onTap?: () => void) {
 }
 
 // ---------- offline / updates ----------
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+if (isNative) { setupNative(); $('get-apk').hidden = true; }
+if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('./sw.js').then((reg) => {
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
@@ -216,3 +218,19 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 }
 
 refresh();
+
+async function setupNative() {
+  try {
+    const { StatusBar, Style } = await import('@capacitor/status-bar');
+    await StatusBar.setBackgroundColor({ color: prefs.theme === 'light' ? '#dfd2b4' : '#17120d' });
+    await StatusBar.setStyle({ style: prefs.theme === 'light' ? Style.Light : Style.Dark });
+  } catch { /* not available */ }
+  try {
+    const { App } = await import('@capacitor/app');
+    App.addListener('backButton', () => {
+      if (!panel.hidden) { panel.hidden = true; return; }
+      App.minimizeApp();
+    });
+    App.addListener('pause', () => save());
+  } catch { /* not available */ }
+}

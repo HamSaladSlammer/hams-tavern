@@ -34,3 +34,38 @@ jobs:
           git add -A
           git commit -qm "Deploy ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+  android:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - name: Build signed playtest APK
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 0.1.${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../hams-tavern.apk
+      - name: Publish to the Playtest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete playtest --yes --cleanup-tag || true
+          gh release create playtest hams-tavern.apk \
+            --title "Playtest build 0.1.${{ github.run_number }}" \
+            --notes "Android playtest build of Hams Tavern, built from ${GITHUB_SHA::7}. Download hams-tavern.apk on your phone, open it, and allow installing from this source. New builds install over the old one and keep your save." \
+            --latest

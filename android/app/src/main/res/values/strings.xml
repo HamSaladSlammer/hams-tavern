@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Hams Tavern</string>
+    <string name="title_activity_main">Hams Tavern</string>
+    <string name="package_name">com.hamsaladslammer.hamstavern</string>
+    <string name="custom_url_scheme">com.hamsaladslammer.hamstavern</string>
+</resources>

@@ -105,3 +105,5 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ver { font-family: var(--mono); font-size: .68em; color: var(--dim); margin-top: 18px; }
 .toast { position: absolute; left: 16px; right: 16px; bottom: 140px; background: var(--card); border: 1px solid var(--accent); border-radius: 12px; padding: 12px; text-align: center; z-index: 30; }
 @media (prefers-reduced-motion: reduce) { .bell, .l.fresh { animation: none; } #log { scroll-behavior: auto; } }
+
+.apk { display: inline-block; margin-top: 6px; color: var(--gold); font-size: .9em; }
