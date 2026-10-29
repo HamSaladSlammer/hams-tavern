@@ -10,10 +10,10 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,20 +23,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
-      - name: Publish to the gh-pages branch
-        run: |
-          cd dist
-          touch .nojekyll
-          git init -q -b gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "Deploy ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
 
   android:
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,12 +49,44 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
           cp app/build/outputs/apk/release/app-release.apk ../hams-tavern.apk
-      - name: Publish to the Playtest release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: hams-tavern.apk
+
+  deploy:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: dist
+      - name: Publish web build and APK to the gh-pages branch
+        run: |
+          cd dist
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Deploy ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+      - name: Update the Playtest release (the file is replaced in place, never removed)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete playtest --yes --cleanup-tag || true
-          gh release create playtest hams-tavern.apk \
-            --title "Playtest build 0.1.${{ github.run_number }}" \
-            --notes "Android playtest build of Hams Tavern, built from ${GITHUB_SHA::7}. Download hams-tavern.apk on your phone, open it, and allow installing from this source. New builds install over the old one and keep your save." \
-            --latest
+          if gh release view playtest >/dev/null 2>&1; then
+            gh release upload playtest dist/hams-tavern.apk --clobber
+            gh release edit playtest --title "Playtest build 0.1.${{ github.run_number }}"
+          else
+            gh release create playtest dist/hams-tavern.apk --title "Playtest build 0.1.${{ github.run_number }}" \
+              --notes "Android playtest build of Hams Tavern. Easiest download: https://hamsaladslammer.github.io/hams-tavern/hams-tavern.apk" --latest
+          fi

@@ -4,7 +4,7 @@ A solo fantasy RPG with an offline game master. You type what you want to do in 
 
 **Play the playtest build:** https://hamsaladslammer.github.io/hams-tavern/
 
-**Android app (playtest):** https://github.com/HamSaladSlammer/hams-tavern/releases/latest/download/hams-tavern.apk
+**Android app (playtest):** https://hamsaladslammer.github.io/hams-tavern/hams-tavern.apk
 Open the link on an Android phone, download it, then tap the file to install. Android will ask you to allow installs from your browser or file manager. If Play Protect warns about an unrecognised developer, tap **More details → Install anyway**. Later builds install over the old one and keep your save.
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
