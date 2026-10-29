@@ -4,7 +4,10 @@ A solo fantasy RPG with an offline game master. You type what you want to do in 
 
 **Play the playtest build:** https://hamsaladslammer.github.io/hams-tavern/
 
-On Android, open the link in Chrome and choose **Add to Home screen**. It then runs full-screen and works offline.
+**Android app (playtest):** https://github.com/HamSaladSlammer/hams-tavern/releases/latest/download/hams-tavern.apk
+Open the link on an Android phone, download it, then tap the file to install. Android will ask you to allow installs from your browser or file manager. If Play Protect warns about an unrecognised developer, tap **More details → Install anyway**. Later builds install over the old one and keep your save.
+
+You can also open the web link in Chrome and choose **Add to Home screen**.
 
 ## What's in v0.1
 
@@ -50,7 +53,7 @@ npm run build    # production build in dist/
 The game is a static web app built with `base: './'`, so the same `dist/` folder works in all of these:
 
 - **Web/PWA:** GitHub Pages, as it does now.
-- **Android:** wrap `dist/` with Capacitor and publish to Google Play. The save layer in `src/ui/storage.ts` takes a native storage backend.
+- **Android:** the Capacitor project in `android/` is already set up. CI builds a signed APK on every push and publishes it to the `playtest` release. Before going to Google Play, swap the committed playtest key for a private upload key and build an `.aab`.
 - **Steam:** wrap `dist/` with Electron. Steamworks (achievements, cloud saves) gets added through steamworks.js.
 
 ## Credits
