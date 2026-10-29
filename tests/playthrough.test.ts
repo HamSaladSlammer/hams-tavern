@@ -1,5 +1,6 @@
 // Scripted, headless playthroughs of Act One. A player who keeps trying should always be able to finish.
-import { handle, newState, suggestions } from '../src/engine/game';
+import { handle, newState, suggestions, beginGame } from '../src/engine/game';
+import { defaultSpec } from '../src/engine/character';
 import type { GameState } from '../src/engine/types';
 
 let LOG = '';
@@ -28,7 +29,7 @@ function until(s: GameState, flag: string, attempt: () => void, tries = 8) {
 function makeHero(cls: string, species = 'human', bg = 'soldier', seed = 42) {
   const s = newState(seed);
   LOG = '';
-  play(s, ['New game', 'Tess', species, cls, bg, 'begin']);
+  for (const l of beginGame(s, defaultSpec(cls, species, bg, 'Tess'))) LOG += `${l.k}: ${l.t}\n`;
   return s;
 }
 

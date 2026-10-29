@@ -107,3 +107,64 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .bell, .l.fresh { animation: none; } #log { scroll-behavior: auto; } }
 
 .apk { display: inline-block; margin-top: 6px; color: var(--gold); font-size: .9em; }
+
+/* ---------- the Forge ---------- */
+.forge { position: absolute; inset: 0; z-index: 20; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.forge-inner { padding: calc(env(safe-area-inset-top) + 10px) 16px calc(env(safe-area-inset-bottom) + 24px); }
+.forge-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: 0; background: var(--bg); padding: 6px 0 8px; z-index: 2; border-bottom: 1px solid var(--line); }
+.forge-head h2 { font-family: var(--display); font-weight: 400; color: var(--gold); margin: 0; font-size: 1.5em; }
+.forge button.ghost { background: none; border: 1px solid var(--line); border-radius: 14px; padding: 4px 12px; font-size: .85em; color: var(--soft); }
+.forge-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.forge-form section { border-bottom: 1px solid var(--line); padding: 14px 0; }
+.forge-form h3 { font-family: var(--display); font-weight: 400; color: var(--gold); margin: 0 0 8px; font-size: 1.2em; }
+.forge .lbl { display: block; font-family: var(--mono); font-size: .66em; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 6px 0 3px; }
+.forge .f { display: block; min-width: 0; }
+.forge .f.check { display: flex; align-items: center; gap: 8px; padding-top: 10px; font-size: .88em; color: var(--soft); }
+.forge input[type=text], .forge select, .forge textarea { width: 100%; font: inherit; font-size: .95em; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.forge textarea { resize: vertical; }
+.forge select { appearance: auto; }
+.forge .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.forge .g3 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.forge .span2 { grid-column: span 2; }
+.forge .blurb { margin: 10px 0 4px; font-style: italic; color: var(--soft); }
+.forge .small { font-size: .82em; color: var(--soft); margin: 4px 0; }
+.forge .traits { margin: 6px 0; padding-left: 18px; font-size: .86em; color: var(--ink); }
+.forge .traits li { margin-bottom: 3px; }
+.forge .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.forge .row input[type=text] { flex: 1; min-width: 0; }
+.forge .row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.forge button.sm { border: 1px solid var(--line); background: var(--card); border-radius: 14px; padding: 4px 10px; font-size: .78em; }
+.forge button.sm.on, .forge .chip.on { border-color: var(--gold); color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, var(--card)); }
+.forge .chip.locked { opacity: .75; }
+.forge .chip:disabled:not(.on) { opacity: .35; }
+.forge .chips.wrap { display: flex; flex-wrap: wrap; gap: 6px; overflow: visible; padding: 2px 0; }
+.forge .link { background: none; border: 0; color: var(--gold); text-decoration: underline; padding: 0; font-size: inherit; }
+.ab-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ab-in { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; text-align: center; }
+.ab-in .lbl { margin: 0 0 4px; }
+.ab-in select { padding: 4px; text-align: center; }
+.ab-in .tot { display: block; font-family: var(--display); font-size: 1.5em; color: var(--ink); line-height: 1.2; }
+.ab-in .small { margin: 0; font-family: var(--mono); font-size: .7em; }
+.step { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.step button { width: 28px; height: 28px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg2); padding: 0; }
+.kit { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.kit .it { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .9em; }
+.kit label.it { justify-content: flex-start; }
+.forge-go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 16px; }
+.forge-go .err { color: var(--blood); font-size: .88em; }
+.forge-preview { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; align-self: start; }
+.pv-name { font-family: var(--display); font-size: 1.35em; color: var(--gold); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: .88em; margin: 10px 0; }
+.kv dt { color: var(--dim); } .kv dd { margin: 0; text-align: right; font-family: var(--mono); white-space: nowrap; }
+.abil { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 8px 0; }
+.abil .ab { display: flex; flex-direction: column; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 4px 0; }
+.abil .k { font-family: var(--mono); font-size: .6em; color: var(--dim); } .abil .m { font-family: var(--display); font-size: 1.15em; } .abil .s { font-family: var(--mono); font-size: .65em; color: var(--soft); }
+@media (min-width: 720px) {
+  .forge-grid { grid-template-columns: 1fr 260px; }
+  .forge-preview { position: sticky; top: 64px; }
+}
+@media (max-width: 719px) {
+  .forge-preview { position: sticky; top: 52px; order: -1; z-index: 1; padding: 8px 12px; }
+  .forge-preview .abil, .forge-preview .small { display: none; }
+  .forge-preview .kv { grid-template-columns: repeat(3, auto 1fr); margin: 6px 0 0; font-size: .78em; }
+}

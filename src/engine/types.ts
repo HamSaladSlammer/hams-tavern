@@ -51,7 +51,7 @@ export interface ArmorDef {
   price: number;
 }
 
-export type ItemKind = 'weapon' | 'armor' | 'potion' | 'ammo' | 'gear' | 'key' | 'treasure' | 'food' | 'note';
+export type ItemKind = 'weapon' | 'armor' | 'potion' | 'ammo' | 'gear' | 'key' | 'treasure' | 'food' | 'note' | 'drink';
 
 export interface ItemDef {
   id: string;
@@ -104,7 +104,8 @@ export interface MonsterDef {
   surrenderAt?: number; // hp threshold
 }
 
-export type Condition = 'prone' | 'unconscious' | 'stable' | 'dead' | 'frightened' | 'dodging' | 'grappled' | 'surrendered' | 'fled' | 'hidden' | 'blessed' | 'shielded' | 'guided' | 'taunted';
+export type Condition = 'prone' | 'unconscious' | 'stable' | 'dead' | 'frightened' | 'dodging' | 'grappled' | 'surrendered' | 'fled' | 'hidden' | 'blessed' | 'shielded' | 'guided' | 'taunted'
+  | 'raging' | 'restrained' | 'charmed' | 'asleep' | 'halted' | 'marked' | 'hexed' | 'inspired' | 'sorcery' | 'reckless' | 'wildshape' | 'shield_spell' | 'favored' | 'mocked' | 'faerie' | 'frostbit' | 'shifted' | 'shell' | 'divine_favor' | 'fury' | 'jaws' | 'cry' | 'surprised' | 'charged' | 'shillelagh' | 'acted';
 
 export interface Combatant {
   key: string; // unique in fight
@@ -169,6 +170,13 @@ export interface Character {
   conditions: Condition[];
   deathSaves: { ok: number; fail: number };
   pronoun: 'he' | 'she' | 'they';
+  options: Record<string, string>; // class/species choices: fighting style, divine order, genasi element...
+  feat: string;
+  look: string;
+  backstory: string;
+  life: Record<string, string>; // life-path results
+  drunk: number; // 0 sober, 1-2 tipsy, 3-4 drunk, 5+ passed out
+  wildHp: number; // druid beast form temporary hit points
 }
 
 export interface NpcMemory {
@@ -216,4 +224,35 @@ export interface GameState {
   log: LogLine[];
   journal: string[];
   stats: { kills: number; knockouts: number; insults: number };
+  props: Record<string, PropState[]>; // props the oracle added, or that changed (broken, taken)
+  lastObject: string | null;
+}
+
+export interface PropState {
+  id: string;
+  name: string;
+  tags: string[];
+  broken?: boolean;
+  gone?: boolean;
+  spawned?: boolean;
+}
+
+export interface CreationSpec {
+  name: string;
+  pronoun: 'he' | 'she' | 'they';
+  species: string;
+  variant?: string;
+  cls: string;
+  options: Record<string, string>;
+  background: string;
+  boost: { plus2: Ability; plus1: Ability; even: boolean };
+  base: Abilities;
+  skills: Skill[];
+  cantrips: string[];
+  spells: string[];
+  removedKit: string[];
+  customItems: string[];
+  look: string;
+  backstory: string;
+  life: Record<string, string>;
 }

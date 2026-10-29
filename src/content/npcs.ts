@@ -18,10 +18,14 @@ const squib: Npc = {
     if (!m.met) {
       m.met = true;
       c.say('squib', '"New face." He sets a mug down in front of you before you ask. "Barrel Brown. First one\'s on the house, on account of you look like you walked here." He taps the bar twice.');
+      c.give('mug_ale'); c.s.lastObject = 'mug';
+      if (c.flag('local')) c.say('squib', 'He looks at you again. "...You\'re the one from two streets over. Grew up, didn\'t you." That\'s as warm as Squib gets.');
       c.say('squib', '"Board by the door has honest work. Mind the barrel. Don\'t ask about the barrel."');
       return;
     }
     c.say('squib', pick(c.rng, ['"Back again." He reaches for your usual without asking.', '"Sit. You look like the road chewed you."', '"Evening. Or morning. They run together in here."']));
+    if (!c.pc.inventory.some((x) => x.id === 'mug_ale') && c.pc.copper >= 5 && !c.flag('chapel_paid')) { c.pay(5); c.give('mug_ale'); c.s.lastObject = 'mug'; c.narr('A mug of Barrel Brown arrives in front of you. Five copper disappears from the bar.'); }
+    else if (!c.pc.inventory.some((x) => x.id === 'mug_ale') && c.flag('chapel_paid')) { c.give('mug_ale'); c.s.lastObject = 'mug'; c.narr('A mug of Barrel Brown arrives in front of you. Your money\'s no good here now.'); }
   },
   topics: [
     { id: 'bell', keys: ['bell', 'chapel', 'old chapel', 'job', 'quest', 'work', 'notice', '50', 'fifty', 'ringing', 'midnight'], chip: 'Ask about the chapel bell', say: (c) => {

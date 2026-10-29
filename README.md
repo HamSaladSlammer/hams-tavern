@@ -9,6 +9,16 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.2
+
+- **Try anything.** Drink the mug Squib hands you, sit on a stool, climb the rafters, break a chair and swing the leg, light candles, play cards with the dwarves, forage, track, pray, pickpocket. Anything the story doesn't script gets a skill, a DC and a roll; the oracle decides whether the thing you reach for is actually there.
+- **Chained commands:** "take the mug, drink it, then go outside".
+- **Drinking:** ale, stout, cider, wine and Trenchfire, with tipsy, drunk and blackout.
+- **Improvised weapons:** mugs, bottles, chair legs, rocks, bones, candles.
+- **The Forge is back:** the original form-based creator with live preview, standard array, 4d6 or point buy, skills, spells, a life path, look, backstory and kit.
+- **All 12 classes**, each with a Kalashscovia twist; **35 species** (the 9 SRD species plus original-named folk in the roles players know); **16 backgrounds** with feats.
+- Subclasses arrive with level 3, in a later version.
+
 ## What's in v0.1
 
 - **Act One, "The Old Chapel Bell":** the village of Breda, the Smoking Barrel and Squib, the Thornwood March, Kessel's Rest, Doss's pasture, and the Old Chapel's graveyard, nave, vestry, bell tower and crypt. Meet Alistair, a lich who never wanted the party to end. It takes about one to two hours to play.

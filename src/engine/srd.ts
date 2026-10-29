@@ -1,128 +1,12 @@
 // Rules data adapted from the System Reference Document 5.2.1 (CC-BY-4.0, Wizards of the Coast).
 // See ATTRIBUTION.md. Setting-specific items (firearms, the Kalashscovia names) are original.
-import type { Ability, Abilities, ArmorDef, ItemDef, MonsterDef, Skill, WeaponCategory, WeaponDef } from './types';
+import type { ArmorDef, ItemDef, MonsterDef, WeaponDef } from './types';
 
-// ---------- Species ----------
-export interface SpeciesDef {
-  id: string;
-  name: string;
-  speed: number;
-  darkvision: number;
-  blurb: string;
-  traits: string[]; // short rule summaries shown on the sheet
-  extraSkills?: Skill[];
-}
-
-export const SPECIES: SpeciesDef[] = [
-  { id: 'human', name: 'Human', speed: 30, darkvision: 0, blurb: 'Everywhere in Kalashscovia, and stubborn about it.', traits: ['Resourceful: once per long rest, reroll a failed d20 (Heroic Inspiration).', 'Skillful: one extra skill proficiency.'], extraSkills: ['perception'] },
-  { id: 'elf', name: 'Elf', speed: 30, darkvision: 60, blurb: "Lahti's people. Long memories, short patience for orcs.", traits: ['Darkvision 60 ft.', 'Keen Senses: proficiency in Perception.', 'Fey Ancestry: advantage on saves against being charmed.'], extraSkills: ['perception'] },
-  { id: 'dwarf', name: 'Dwarf', speed: 30, darkvision: 120, blurb: 'Road-menders, miners, drinkers of stout.', traits: ['Darkvision 120 ft.', 'Dwarven Toughness: +1 HP per level.', 'Dwarven Resilience: resistance to poison damage.'] },
-  { id: 'halfling', name: 'Halfling', speed: 30, darkvision: 0, blurb: 'Merchants and gossips. Fenwick Tealeaf is one.', traits: ['Luck: when you roll a 1 on a d20 test, reroll it.', 'Brave: advantage on saves against being frightened.'] },
-  { id: 'orc', name: 'Orc', speed: 30, darkvision: 120, blurb: "Makrovin's people. Fifteen years ago, the enemy.", traits: ['Darkvision 120 ft.', 'Relentless Endurance: once per long rest, drop to 1 HP instead of 0.'] },
-  { id: 'tiefling', name: 'Tiefling', speed: 30, darkvision: 60, blurb: 'Horned, often red, never quite trusted.', traits: ['Darkvision 60 ft.', 'Infernal Legacy: resistance to fire damage.'] },
-  { id: 'dragonborn', name: 'Dragonborn', speed: 30, darkvision: 60, blurb: 'Scaled travellers, far from home.', traits: ['Darkvision 60 ft.', 'Breath Weapon (fire): 1d10 fire to up to three foes, Dex save halves. Uses = proficiency bonus per long rest.', 'Damage Resistance: fire.'] },
-  { id: 'gnome', name: 'Gnome', speed: 30, darkvision: 60, blurb: 'Small, clever, curious about everything that ticks.', traits: ['Darkvision 60 ft.', 'Gnomish Cunning: advantage on Int, Wis and Cha saves.'] },
-  { id: 'goliath', name: 'Goliath', speed: 35, darkvision: 0, blurb: 'Mountain-born giants from the Northern Peaks.', traits: ["Stone's Endurance: once per short rest, reduce damage taken by 1d12 + Con."] },
-];
-
-// ---------- Classes ----------
-export interface ClassDef {
-  id: string;
-  name: string;
-  hitDie: number;
-  primary: Ability;
-  saves: Ability[];
-  skills: Skill[]; // auto-picked
-  weaponProf: WeaponCategory[];
-  armorProf: ('light' | 'medium' | 'heavy' | 'shield')[];
-  array: Abilities; // standard array assigned for the class
-  gear: string[]; // item ids
-  equip: { main?: string; offhand?: string; armor?: string; shield?: string; ranged?: string };
-  copper: number;
-  cantrips?: string[];
-  spells?: string[];
-  slots?: number[]; // by level
-  blurb: string;
-  features: Record<number, string[]>;
-}
-
-export const CLASSES: ClassDef[] = [
-  {
-    id: 'fighter', name: 'Fighter', hitDie: 10, primary: 'str', saves: ['str', 'con'],
-    skills: ['athletics', 'intimidation'], weaponProf: ['simple', 'martial', 'firearm'], armorProf: ['light', 'medium', 'heavy', 'shield'],
-    array: { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 },
-    gear: ['chain_mail', 'longsword', 'shield', 'service_revolver', 'pistol_cartridge', 'rations', 'torch'],
-    equip: { main: 'longsword', armor: 'chain_mail', shield: 'shield', ranged: 'service_revolver' },
-    copper: 400,
-    blurb: 'A veteran of somebody\'s war. Armour, steel, and a revolver for when steel is too slow.',
-    features: { 1: ['Second Wind: bonus action, heal 1d10 + level. Two uses, regain one on a short rest.', 'Fighting Style (Defense): +1 AC while wearing armour.'], 2: ['Action Surge: once per short rest, take one extra action.'] },
-  },
-  {
-    id: 'rogue', name: 'Rogue', hitDie: 8, primary: 'dex', saves: ['dex', 'int'],
-    skills: ['stealth', 'sleight of hand', 'perception', 'deception'], weaponProf: ['simple', 'martial'], armorProf: ['light'],
-    array: { str: 8, dex: 15, con: 14, int: 12, wis: 13, cha: 10 },
-    gear: ['leather_armor', 'rapier', 'dagger', 'shortbow', 'arrow', 'thieves_tools', 'rations'],
-    equip: { main: 'rapier', armor: 'leather_armor', ranged: 'shortbow' },
-    copper: 800,
-    blurb: 'Quick hands and quicker exits. Breda has locks; you have opinions about them.',
-    features: { 1: ['Sneak Attack: +1d6 once per turn when you have advantage, or an ally is fighting beside you.', 'Expertise: double proficiency in Stealth and Sleight of Hand.'], 2: ['Cunning Action: bonus action to hide (advantage on your next attack) or disengage.'] },
-  },
-  {
-    id: 'monk', name: 'Monk', hitDie: 8, primary: 'dex', saves: ['str', 'dex'],
-    skills: ['acrobatics', 'insight'], weaponProf: ['simple'], armorProf: [],
-    array: { str: 12, dex: 15, con: 13, int: 8, wis: 14, cha: 10 },
-    gear: ['quarterstaff', 'dart', 'rations', 'torch'],
-    equip: { main: 'quarterstaff' },
-    copper: 500,
-    blurb: 'Fists, feet, elbows, knees, and a frightening amount of patience. Every limb is a weapon.',
-    features: { 1: ['Martial Arts: your unarmed strikes use Dex and deal 1d6; after any attack you can make one unarmed strike as a bonus action.', 'Unarmored Defense: AC = 10 + Dex + Wis with no armour or shield.'], 2: ['Focus (2 points, short rest): Flurry of Blows — two bonus unarmed strikes.'] },
-  },
-  {
-    id: 'wizard', name: 'Wizard', hitDie: 6, primary: 'int', saves: ['int', 'wis'],
-    skills: ['arcana', 'investigation'], weaponProf: ['simple'], armorProf: [],
-    array: { str: 8, dex: 14, con: 13, int: 15, wis: 12, cha: 10 },
-    gear: ['quarterstaff', 'dagger', 'spellbook', 'rations', 'torch'],
-    equip: { main: 'quarterstaff' },
-    copper: 500,
-    cantrips: ['fire_bolt', 'ray_of_frost', 'prestidigitation'],
-    spells: ['magic_missile', 'burning_hands', 'mage_armor'],
-    slots: [0, 2, 3],
-    blurb: 'Book-smart. Possibly heart-clumsy. Your spells came from somewhere older than you think.',
-    features: { 1: ['Spellcasting (Int): cantrips at will; level-1 spell slots recover on a long rest.'], 2: ['A third spell slot.'] },
-  },
-  {
-    id: 'cleric', name: 'Cleric', hitDie: 8, primary: 'wis', saves: ['wis', 'cha'],
-    skills: ['religion', 'medicine'], weaponProf: ['simple', 'martial'], armorProf: ['light', 'medium', 'heavy', 'shield'],
-    array: { str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 },
-    gear: ['chain_mail', 'mace', 'shield', 'holy_symbol', 'rations', 'torch'],
-    equip: { main: 'mace', armor: 'chain_mail', shield: 'shield' },
-    copper: 500,
-    cantrips: ['sacred_flame', 'guidance', 'thaumaturgy'],
-    spells: ['cure_wounds', 'healing_word', 'guiding_bolt', 'bless'],
-    slots: [0, 2, 3],
-    blurb: 'The old faith, the Silent Keeper, the Bright Hearth — whoever you pray to, the dead are their business now.',
-    features: { 1: ['Spellcasting (Wis).', 'Divine Order (Protector): heavy armour and martial weapons.'], 2: ['Channel Divinity — Turn Undead: undead that fail a Wis save are frightened and flee.'] },
-  },
-];
-
-// ---------- Backgrounds (SRD 5.2.1 has these four) ----------
-export interface BackgroundDef {
-  id: string;
-  name: string;
-  boosts: [Ability, Ability]; // +2, +1
-  skills: Skill[];
-  gear: string[];
-  copper: number;
-  feat: string;
-  blurb: string;
-}
-
-export const BACKGROUNDS: BackgroundDef[] = [
-  { id: 'soldier', name: 'Soldier', boosts: ['str', 'con'], skills: ['athletics', 'intimidation'], gear: ['bayonet'], copper: 1400, feat: 'Savage Attacker: once per turn, roll weapon damage twice and keep the higher.', blurb: 'You served in the civil war, or right after it. You never talk about it.' },
-  { id: 'criminal', name: 'Criminal', boosts: ['dex', 'con'], skills: ['sleight of hand', 'stealth'], gear: ['crowbar'], copper: 1600, feat: 'Alert: add your proficiency bonus to initiative.', blurb: 'Largo docks, Borschardt back rooms. You know who buys and who asks questions.' },
-  { id: 'acolyte', name: 'Acolyte', boosts: ['wis', 'cha'], skills: ['insight', 'religion'], gear: ['holy_symbol'], copper: 800, feat: 'Magic Initiate: you know the guidance cantrip.', blurb: 'You kept a chapel once. Most of them are empty now.' },
-  { id: 'sage', name: 'Sage', boosts: ['int', 'con'], skills: ['arcana', 'history'], gear: ['ink_and_quill'], copper: 800, feat: 'Magic Initiate: you know the prestidigitation cantrip.', blurb: 'An archive clerk, a tutor, a reader of things other people burned.' },
-];
+export { SPECIES, speciesById } from '../data/species';
+export { CLASSES, classById } from '../data/classes';
+export { BACKGROUNDS, backgroundById, FEATS } from '../data/backgrounds';
+export { SPELLS } from '../data/spells';
+export type { SpellDef } from '../data/spells';
 
 // ---------- Weapons ----------
 const W = (w: WeaponDef): WeaponDef => w;
@@ -142,6 +26,8 @@ export const WEAPONS: WeaponDef[] = [
   W({ id: 'battleaxe', name: 'Battleaxe', category: 'martial', ranged: false, damage: '1d8', dtype: 'slashing', price: 1000 }),
   W({ id: 'warhammer', name: 'Warhammer', category: 'martial', ranged: false, damage: '1d8', dtype: 'bludgeoning', price: 1500 }),
   W({ id: 'greataxe', name: 'Greataxe', category: 'martial', ranged: false, damage: '1d12', dtype: 'slashing', twoHanded: true, price: 3000 }),
+  W({ id: 'sickle', name: 'Sickle', category: 'simple', ranged: false, damage: '1d4', dtype: 'slashing', light: true, price: 100 }),
+  W({ id: 'club_improvised', name: 'Improvised Weapon', category: 'simple', ranged: false, damage: '1d4', dtype: 'bludgeoning', thrown: true, range: [20, 60], price: 0 }),
   W({ id: 'dart', name: 'Dart', category: 'simple', ranged: true, damage: '1d4', dtype: 'piercing', finesse: true, thrown: true, range: [20, 60], price: 5 }),
   W({ id: 'shortbow', name: 'Shortbow', category: 'simple', ranged: true, damage: '1d6', dtype: 'piercing', range: [80, 320], ammo: 'arrow', twoHanded: true, price: 2500 }),
   W({ id: 'light_crossbow', name: 'Light Crossbow', category: 'simple', ranged: true, damage: '1d8', dtype: 'piercing', range: [80, 320], ammo: 'bolt', twoHanded: true, price: 2500 }),
@@ -190,6 +76,37 @@ items.push(
   { id: 'wolf_pelt', name: 'Wolf Pelt', kind: 'treasure', price: 100, desc: 'Fresh. Hetch might want it.', aliases: ['pelt'] },
   { id: 'scroll_bless', name: 'Scroll of Bless', kind: 'gear', price: 5000, desc: 'Anyone can read it once: +1d4 to attacks for the next fight.', aliases: ['scroll'] },
   { id: 'black_label', name: "Squib's Reserve (black label)", kind: 'food', price: 0, desc: 'He only pours it for people he likes.' },
+  { id: 'mug_ale', name: 'Mug of Barrel Brown', kind: 'drink', price: 5, desc: 'Brown, cold enough, and honest. Squib\'s house ale.', aliases: ['mug', 'ale', 'beer', 'drink', 'pint', 'barrel brown', 'brown', 'tankard', 'mug of ale'] },
+  { id: 'mug_stout', name: 'Mug of Dwarven Stout', kind: 'drink', price: 10, desc: 'Black as a mineshaft and nearly as thick.', aliases: ['stout', 'mug', 'drink'] },
+  { id: 'cider', name: 'Brumandell Cider', kind: 'drink', price: 5, desc: 'Apples, sunshine, and a kick you don\'t see coming.', aliases: ['cider', 'drink'] },
+  { id: 'wine', name: 'Carafe of Galilin Red', kind: 'drink', price: 25, desc: 'Rough, red, and generous.', aliases: ['wine', 'red', 'carafe', 'drink'] },
+  { id: 'trenchfire_shot', name: 'Shot of Trenchfire', kind: 'drink', price: 5, desc: 'Orcish rotgut. It tastes like regret.', aliases: ['trenchfire', 'shot', 'rotgut', 'whiskey', 'whisky', 'drink'] },
+  { id: 'water_cup', name: 'Cup of Water', kind: 'drink', price: 0, desc: 'Cold well water.', aliases: ['water', 'cup'] },
+  { id: 'mug_empty', name: 'Empty Mug', kind: 'gear', price: 2, desc: 'Heavy clay, a chip on the rim. Makes a decent club in a pinch.', aliases: ['mug', 'empty mug', 'tankard', 'cup'] },
+  { id: 'bottle_empty', name: 'Empty Bottle', kind: 'gear', price: 1, desc: 'Green glass. Smash it and it\'s a weapon.', aliases: ['bottle', 'empty bottle'] },
+  { id: 'chair_leg', name: 'Chair Leg', kind: 'gear', price: 0, desc: 'Solid oak, splintered at one end.', aliases: ['chair leg', 'leg', 'club', 'stick'] },
+  { id: 'rock', name: 'Rock', kind: 'gear', price: 0, desc: 'A fist-sized rock. Satisfying weight.', aliases: ['rock', 'stone', 'pebble'] },
+  { id: 'stick', name: 'Stout Stick', kind: 'gear', price: 0, desc: 'A sturdy fallen branch.', aliases: ['stick', 'branch', 'twig'] },
+  { id: 'bone', name: 'Old Bone', kind: 'gear', price: 0, desc: 'A long bone. You try not to think about whose.', aliases: ['bone', 'femur'] },
+  { id: 'mushroom', name: 'Pale Mushroom', kind: 'food', price: 2, desc: 'Violet gills. Could be dinner. Could be Widow\'s Cap.', aliases: ['mushroom', 'shroom', 'fungus'] },
+  { id: 'egg', name: 'Egg', kind: 'food', price: 1, desc: 'A fresh brown egg.', aliases: ['egg', 'eggs'] },
+  { id: 'apple', name: 'Apple', kind: 'food', price: 1, desc: 'A Brumandell apple, a bit bruised.', aliases: ['apple', 'fruit'] },
+  { id: 'goodberry', name: 'Goodberry', kind: 'food', price: 0, desc: 'A berry swollen with magic. Eating it heals 1 HP.', aliases: ['berry', 'goodberry', 'berries'] },
+  { id: 'lute', name: 'Lute', kind: 'gear', price: 3500, desc: 'Scratched, beloved, slightly out of tune.', aliases: ['lute', 'instrument'] },
+  { id: 'herbalism_kit', name: 'Herbalism Kit', kind: 'gear', price: 500, desc: 'Pouches, a mortar, dried leaves.' },
+  { id: 'candle', name: 'Candle', kind: 'gear', price: 1, desc: 'An ordinary tallow candle.', aliases: ['candle'] },
+  { id: 'book_of_lore', name: 'Book of Lore', kind: 'note', price: 2500, desc: 'A battered history of Lahti, with chapters torn out.', read: 'The chapter on "The Old Court" has been removed so neatly you almost don\'t notice. The index still lists a page for "V—", and the page is missing.', aliases: ['book'] },
+  { id: 'smith_tools', name: 'Smith\'s Tools', kind: 'gear', price: 2000, desc: 'Hammer, tongs, a small file.' },
+  { id: 'fine_clothes', name: 'Fine Clothes', kind: 'gear', price: 1500, desc: 'Too good for the road, and everyone notices.' },
+  { id: 'marked_cards', name: 'Marked Cards', kind: 'gear', price: 100, desc: 'A deck that always tells you the truth.', aliases: ['cards', 'deck'] },
+  { id: 'costume', name: 'Costume', kind: 'gear', price: 500, desc: 'A theatre king\'s robe, slightly moth-eaten.' },
+  { id: 'lantern', name: 'Hooded Lantern', kind: 'gear', price: 500, desc: 'Bright and steady.', aliases: ['lantern', 'lamp'] },
+  { id: 'lamp', name: 'Oil Lamp', kind: 'gear', price: 50, desc: 'A small brass lamp.' },
+  { id: 'scales', name: 'Merchant\'s Scales', kind: 'gear', price: 500, desc: 'For weighing coin and lies.' },
+  { id: 'signet_ring', name: 'Signet Ring', kind: 'treasure', price: 0, desc: 'Your family crest. It opens some doors in Suomi.' },
+  { id: 'bedroll', name: 'Bedroll', kind: 'gear', price: 100, desc: 'Lumpy but yours.' },
+  { id: 'keepsake', name: 'Keepsake', kind: 'treasure', price: 0, desc: 'A tin soldier with one arm. The only thing you had when they found you.' },
+  { id: 'queens_coin', name: 'Coin with a Queen\'s Face', kind: 'key', price: 0, desc: 'An old silver coin. The crowned woman on it is beautiful, and nobody can tell you who she is. It is always cold.', aliases: ['coin', 'queen coin', 'old coin'] },
   { id: 'travel_cloak', name: 'Travel Cloak', kind: 'gear', price: 500, desc: 'Hetch\'s work: oiled wool, deep hood, a lining that smells faintly of cedar. Warm, and much better than what you had.', aliases: ['cloak'] },
   { id: 'cult_candle', name: 'Green-Black Candle', kind: 'treasure', price: 10, desc: 'Burns with a greenish flame. Smells of graves and honey.', aliases: ['candle', 'candles'] },
 );
@@ -205,40 +122,6 @@ function describeWeapon(w: WeaponDef): string {
   if (w.silvered) p.push('silvered');
   return p.join(', ') + '.';
 }
-
-// ---------- Spells ----------
-export type SpellKind = 'attack' | 'save' | 'auto' | 'heal' | 'buff' | 'utility';
-export interface SpellDef {
-  id: string;
-  name: string;
-  level: 0 | 1;
-  kind: SpellKind;
-  damage?: string; // base
-  dtype?: string;
-  save?: Ability;
-  ranged?: boolean;
-  aoe?: number; // max targets
-  bonusAction?: boolean;
-  desc: string;
-  aliases: string[];
-}
-
-export const SPELLS: Record<string, SpellDef> = {
-  fire_bolt: { id: 'fire_bolt', name: 'Fire Bolt', level: 0, kind: 'attack', damage: '1d10', dtype: 'fire', ranged: true, desc: 'Ranged spell attack, 1d10 fire.', aliases: ['fire bolt', 'firebolt', 'fire'] },
-  ray_of_frost: { id: 'ray_of_frost', name: 'Ray of Frost', level: 0, kind: 'attack', damage: '1d8', dtype: 'cold', ranged: true, desc: 'Ranged spell attack, 1d8 cold.', aliases: ['ray of frost', 'frost', 'ice ray'] },
-  chill_touch: { id: 'chill_touch', name: 'Chill Touch', level: 0, kind: 'attack', damage: '1d10', dtype: 'necrotic', ranged: false, desc: 'Melee spell attack, 1d10 necrotic.', aliases: ['chill touch'] },
-  sacred_flame: { id: 'sacred_flame', name: 'Sacred Flame', level: 0, kind: 'save', damage: '1d8', dtype: 'radiant', save: 'dex', ranged: true, desc: 'Dex save or 1d8 radiant.', aliases: ['sacred flame', 'holy fire'] },
-  guidance: { id: 'guidance', name: 'Guidance', level: 0, kind: 'utility', desc: 'Add 1d4 to your next ability check.', aliases: ['guidance'] },
-  prestidigitation: { id: 'prestidigitation', name: 'Prestidigitation', level: 0, kind: 'utility', desc: 'Harmless tricks: sparks, smells, chilled drinks, small noises.', aliases: ['prestidigitation', 'presti'] },
-  thaumaturgy: { id: 'thaumaturgy', name: 'Thaumaturgy', level: 0, kind: 'utility', desc: 'Your voice booms, flames flicker, the ground trembles a little.', aliases: ['thaumaturgy'] },
-  magic_missile: { id: 'magic_missile', name: 'Magic Missile', level: 1, kind: 'auto', damage: '1d4+1', dtype: 'force', ranged: true, desc: 'Three darts, each 1d4+1 force. They never miss.', aliases: ['magic missile', 'missile', 'missiles'] },
-  burning_hands: { id: 'burning_hands', name: 'Burning Hands', level: 1, kind: 'save', damage: '3d6', dtype: 'fire', save: 'dex', aoe: 3, desc: 'A sheet of flame: up to three foes, Dex save for half, 3d6 fire.', aliases: ['burning hands', 'flames'] },
-  mage_armor: { id: 'mage_armor', name: 'Mage Armour', level: 1, kind: 'buff', desc: 'AC becomes 13 + Dex until your next long rest.', aliases: ['mage armor', 'mage armour'] },
-  cure_wounds: { id: 'cure_wounds', name: 'Cure Wounds', level: 1, kind: 'heal', damage: '2d8', desc: 'Touch: heal 2d8 + Wis.', aliases: ['cure wounds', 'cure', 'heal'] },
-  healing_word: { id: 'healing_word', name: 'Healing Word', level: 1, kind: 'heal', damage: '2d4', bonusAction: true, desc: 'Bonus action, at range: heal 2d4 + Wis.', aliases: ['healing word'] },
-  guiding_bolt: { id: 'guiding_bolt', name: 'Guiding Bolt', level: 1, kind: 'attack', damage: '4d6', dtype: 'radiant', ranged: true, desc: 'Ranged spell attack, 4d6 radiant; the next attack against the target has advantage.', aliases: ['guiding bolt', 'bolt of light'] },
-  bless: { id: 'bless', name: 'Bless', level: 1, kind: 'buff', desc: 'You and your allies add 1d4 to attack rolls for this fight.', aliases: ['bless'] },
-};
 
 // ---------- Monsters ----------
 const ab = (str: number, dex: number, con: number, int: number, wis: number, cha: number) => ({ str, dex, con, int, wis, cha });

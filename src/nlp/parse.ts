@@ -45,7 +45,9 @@ export type Intent =
   | { type: 'dodge' }
   | { type: 'flee' }
   | { type: 'surrender' }
-  | { type: 'feature'; name: 'second wind' | 'action surge' | 'flurry' | 'turn undead' | 'breath' }
+  | { type: 'feature'; name: string; target?: string }
+  | { type: 'drink'; item: string }
+  | { type: 'eat'; item: string }
   | { type: 'oracle'; question: string }
   | { type: 'spare'; target?: string }
   | { type: 'finish'; target?: string }
@@ -138,6 +140,35 @@ export function parse(rawInput: string, spellNames: string[] = []): Intent {
   if (/flurry/.test(t)) return { type: 'feature', name: 'flurry' };
   if (/turn undead|channel divinity|present (my )?holy symbol/.test(t)) return { type: 'feature', name: 'turn undead' };
   if (/breath weapon|breathe fire|breath attack|use (my )?breath/.test(t)) return { type: 'feature', name: 'breath' };
+  {
+    const F: [RegExp, string][] = [
+      [/^(rage|go into a rage|enter (a )?rage|start raging|get angry|lose it|berserk|go berserk)$/, 'rage'],
+      [/^(reckless|reckless attack|attack recklessly|go reckless)$/, 'reckless'],
+      [/^(bardic inspiration|inspire( me| myself)?|inspiration|use inspiration)$/, 'inspiration'],
+      [/^(lay on hands|lay hands( on (.+))?|use lay on hands( on (.+))?)$/, 'lay on hands'],
+      [/^(innate sorcery|unleash (my )?sorcery|use innate sorcery)$/, 'innate sorcery'],
+      [/^(font of magic|convert sorcery points|make a spell slot|recover a slot)$/, 'font of magic'],
+      [/^(wild ?shape|turn into a wolf|become a wolf|shapeshift|change shape|transform|wolf form|beast form)$/, 'wild shape'],
+      [/^(revert|change back|turn back|end wild ?shape|human form|normal form)$/, 'revert'],
+      [/^(cunning action|cunning disengage)$/, 'cunning'],
+      [/^(herbal remedy|use (my )?remedy|apply herbs|patch myself up)$/, 'remedy'],
+      [/^(divine smite|smite)$/, 'smite'],
+      [/^(adrenaline rush|adrenaline)$/, 'adrenaline'],
+      [/^(healing hands)( on (.+))?$/, 'healing hands'],
+      [/^(fury of the small|fury)$/, 'fury'],
+      [/^(draconic cry|dragon cry|shriek|war ?cry)$/, 'cry'],
+      [/^(hide in (my|your) shell|shell defense|shell defence|go into (my )?shell|withdraw into (my )?shell)$/, 'shell'],
+      [/^(shifting|shift form|go feral|beast out)$/, 'shifting'],
+      [/^(hidden step|step out of sight)$/, 'hidden step'],
+      [/^(hungry jaws)$/, 'hungry jaws'],
+      [/^(fey step|misty step|blink away|slip away|hare-trigger|hare trigger|nimble escape|teleport away|fey escape)$/, 'escape'],
+      [/^(faerie light|fairy light|faerie fire power)$/, 'faerie'],
+      [/^(recall|ancestral recall|kenku recall)$/, 'recall'],
+      [/^(past life|remember my past life|deathless memory)$/, 'past life'],
+      [/^(stone'?s endurance)$/, 'stone'],
+    ];
+    for (const [re, name] of F) { const fm = t.match(re); if (fm) { const tgt = fm[3] ?? fm[2]; return { type: 'feature', name, target: tgt && !/^(my|a|the)\b/.test(tgt) ? clean(tgt) : undefined }; } }
+  }
   if (/^(dodge|defend|take cover|duck|brace|block|parry|go defensive|full defense)\b/.test(t)) return { type: 'dodge' };
   if (/^(flee|run away|run|retreat|escape|get out of here|leg it|bail|scram|run for it|disengage)\b/.test(t)) return { type: 'flee' };
   if (/^(surrender|give up|yield|i yield|i give up)$/.test(t)) return { type: 'surrender' };
@@ -173,6 +204,11 @@ export function parse(rawInput: string, spellNames: string[] = []): Intent {
     const dm = t.match(/^(?:kick|boot|mule kick|mule-kick|shoulder|bash|break|break down|batter|ram|smash|kick down|kick in|kick open|shoulder open)\s+(?:open\s+|down\s+|in\s+)?(.+?)(?:\s+open|\s+down|\s+in)?$/);
     if (dm && /\b(door|gate|lock|chest|trapdoor|hatch)\b/.test(dm[1])) return { type: 'open', thing: clean(dm[1]), method: /kick|boot/.test(t) ? 'kick' : 'force' };
   }
+  // --- biting your dinner is not an attack ---
+  {
+    const fm = t.match(/^(?:bite|nibble|chomp|gnaw|chew)(?:\s+(?:into|on))?\s+(?:the |an? |my |some )?(apple|egg|bread|ration|rations|mushroom|berry|berries|goodberry|pie|meat pie|cheese|chicken|food|stew|meat|sandwich|carrot|onion)\b/);
+    if (fm) return { type: 'eat', item: fm[1] };
+  }
   // --- unarmed strikes ---
   const unarmed = startsWithPhrase(t, Object.keys(UNARMED_VERBS));
   if (unarmed) {
@@ -205,6 +241,8 @@ export function parse(rawInput: string, spellNames: string[] = []): Intent {
     // "throw dagger at zombie" / "throw a punch at" (handled above)
     const m = t.slice(thrown.length).trim().match(/^(.+?)\s+(?:at|toward|towards|into)\s+(.+)$/);
     if (m) return { type: 'attack', style: 'thrown', verb: thrown, target: clean(m[2]), weapon: clean(m[1]) };
+    const w = clean(t.slice(thrown.length));
+    if (w && !/^(a |the )?(punch|kick|fit|tantrum|party|up)\b/.test(w)) return { type: 'attack', style: 'thrown', verb: thrown, weapon: w };
   }
   const melee = startsWithPhrase(t, MELEE_VERBS);
   if (melee) {
@@ -221,6 +259,10 @@ export function parse(rawInput: string, spellNames: string[] = []): Intent {
 
   // --- items ---
   let m: RegExpMatchArray | null;
+  if (/^(drink|have a drink|take a drink|take a sip|drink up|have a sip|sip|chug|swig|quaff|bottoms up|down it|drink it|sip it|chug it|neck it)$/.test(t)) return { type: 'drink', item: '' };
+  if ((m = t.match(/^(?:drink|quaff|chug|sip|swig|neck|knock back|throw back|down|take a (?:sip|swig|drink|pull) (?:of|from)|sip from|drink from|drink out of|have a (?:sip|drink) of)\s+(.+)$/)) && !/potion/.test(m[1])) return { type: 'drink', item: clean(m[1]) };
+  if (/^(eat|have a bite|grab a bite|have something to eat|eat something|munch|snack)$/.test(t)) return { type: 'eat', item: '' };
+  if ((m = t.match(/^(?:eat|consume|munch on|munch|devour|nibble on|snack on|bite into|chew on|chew|wolf down|scarf down|scoff)\s+(.+)$/))) return { type: 'eat', item: clean(m[1]) };
   if ((m = t.match(/^(?:drink|quaff|chug|down|sip|swig|use|apply|eat|consume|read and use)\s+(.+?)(?:\s+on\s+(.+))?$/))) {
     if (/^(read)/.test(t)) return { type: 'read', thing: clean(m[1]) };
     return { type: 'use', item: clean(m[1]), target: m[2] ? clean(m[2]) : undefined };

@@ -1,5 +1,6 @@
 import './ui/styles.css';
-import { handle, newState, suggestions, statusLine, peek, migrate } from './engine/game';
+import { handle, newState, suggestions, statusLine, peek, migrate, beginGame } from './engine/game';
+import { openForge } from './ui/forge';
 import type { GameState, LogLine } from './engine/types';
 import { backend, SAVE_KEY, PREFS_KEY } from './ui/storage';
 
@@ -74,14 +75,15 @@ function refresh() {
     chipsEl.appendChild(b);
   }
   chipsEl.scrollLeft = 0;
-  input.placeholder = state.phase === 'create' && state.creation.step === 'name' ? 'Your name…' : state.combat ? 'Punch, kick, cast, shoot, dodge…' : 'What do you do?';
+  input.placeholder = state.combat ? 'Punch, kick, cast, shoot, dodge…' : 'What do you do?';
 }
 
 function save() { try { backend.save(SAVE_KEY, JSON.stringify(state)); } catch { /* full storage: ignore */ } }
 
 function send(text: string) {
   const t = text.trim();
-  if (!t && state.phase !== 'title') return;
+  if (!t) return;
+  if (state.phase !== 'play') { startNew(); return; }
   if (t) { history.unshift(t); history.length = Math.min(history.length, 50); }
   histIdx = -1;
   const lines = handle(state, t);
@@ -98,7 +100,7 @@ input.addEventListener('keydown', (e) => {
 // ---------- title ----------
 $('ver').textContent = VERSION;
 const saved = (() => { try { const raw = backend.load(SAVE_KEY); return raw ? migrate(JSON.parse(raw)) : null; } catch { return null; } })();
-if (saved && saved.phase !== 'title') $('btn-continue').hidden = false;
+if (saved && saved.phase === 'play' && saved.pc) $('btn-continue').hidden = false;
 $('btn-continue').onclick = () => {
   state = saved!;
   $('title').hidden = true;
@@ -118,11 +120,15 @@ function confirmNew(): boolean {
   return false;
 }
 function startNew() {
-  state = newState((Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
   $('title').hidden = true;
-  logEl.innerHTML = '';
-  send('New game');
-  input.focus();
+  openForge($('forge'), (spec) => {
+    state = newState((Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
+    logEl.innerHTML = '';
+    render([{ k: 'title', t: 'Hams Tavern: The Bells of Lahti' }]);
+    render(beginGame(state, spec));
+    save();
+    input.focus();
+  }, () => { $('title').hidden = false; });
 }
 
 // ---------- panels ----------
@@ -229,6 +235,7 @@ async function setupNative() {
     const { App } = await import('@capacitor/app');
     App.addListener('backButton', () => {
       if (!panel.hidden) { panel.hidden = true; return; }
+      if (!$('forge').hidden) { $('forge').hidden = true; $('title').hidden = false; return; }
       App.minimizeApp();
     });
     App.addListener('pause', () => save());
