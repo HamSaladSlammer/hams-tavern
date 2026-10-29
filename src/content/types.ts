@@ -22,7 +22,7 @@ export interface Ctx {
   money(cp: number): void;
   pay(cp: number): boolean;
   xp(n: number): void;
-  fight(encounterId: string): void;
+  fight(encounter: string | EncounterDef): void;
   move(roomId: string, opts?: { quiet?: boolean }): void;
   npc(id: string): NpcMemory;
   hasCompanion(id: string): boolean;
@@ -117,6 +117,12 @@ export interface EncounterDef {
   onWin?: (c: Ctx) => void;
   ambush?: boolean; // foes act first
   scaleWithParty?: boolean;
+  names?: Record<string, string>; // monster id -> display name
+  spawnAt?: Record<string, { x: number; y: number }>; // monster id -> fixed square
+  nonlethal?: boolean; // a brawl: people at 0 HP are knocked out, not killed
+  npcIds?: string[]; // townsfolk fighting in this encounter (they leave their spots)
+  unitNames?: string[]; // names for each foe, in order
+  onLose?: (c: Ctx) => void;
 }
 
 export interface TravelTable {

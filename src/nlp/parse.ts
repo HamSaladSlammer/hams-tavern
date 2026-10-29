@@ -47,6 +47,7 @@ export type Intent =
   | { type: 'surrender' }
   | { type: 'feature'; name: string; target?: string }
   | { type: 'drink'; item: string }
+  | { type: 'move'; x?: number; y?: number; toward?: string; away?: boolean; dir?: string; squares?: number; cover?: boolean; dash?: boolean }
   | { type: 'eat'; item: string }
   | { type: 'oracle'; question: string }
   | { type: 'spare'; target?: string }
@@ -169,7 +170,21 @@ export function parse(rawInput: string, spellNames: string[] = []): Intent {
     ];
     for (const [re, name] of F) { const fm = t.match(re); if (fm) { const tgt = fm[3] ?? fm[2]; return { type: 'feature', name, target: tgt && !/^(my|a|the)\b/.test(tgt) ? clean(tgt) : undefined }; } }
   }
-  if (/^(dodge|defend|take cover|duck|brace|block|parry|go defensive|full defense)\b/.test(t)) return { type: 'dodge' };
+  {
+    const mv = raw.match(/^@move\s+(\d+)\s+(\d+)$/);
+    if (mv) return { type: 'move', x: Number(mv[1]), y: Number(mv[2]) };
+    if (/^(dash|sprint|run like hell|double move|double time)$/.test(t)) return { type: 'move', dash: true };
+    if (/^(take cover|get (behind )?cover|find cover|get to cover|duck behind something|hide behind something|get behind something)$/.test(t)) return { type: 'move', cover: true };
+    let mm = t.match(/^(?:back off|back away|step back|step away|get away|move away|pull back|fall back|keep (?:my|your) distance|kite)(?: from)?\s*(.*)$/);
+    if (mm) return { type: 'move', away: true, toward: clean(mm[1]) || undefined, dir: clean(mm[1]) ? undefined : 'back' };
+    mm = t.match(/^(?:approach|close in on|close the distance to|close (?:the )?distance with|move (?:up )?to|move toward|move towards|walk (?:up )?to|step (?:up )?to|get (?:close|closer) to|go (?:up )?to|run (?:up )?to|stand next to|move next to|walk over to|head over to|go over to|go stand by|stand by)\s+(.+)$/);
+    if (mm) return { type: 'move', toward: clean(mm[1]) };
+    mm = t.match(/^(?:move|step|shift|advance|walk|go|run)\s+(\d+)?\s*(?:squares?|feet|ft|steps?)?\s*(north|south|east|west|left|right|up|down|forward|back|backward|backwards)(?:\s+(\d+)\s*(squares?|feet|ft|steps?))?$/);
+    if (mm && /^(walk|go|run)\b/.test(t) && !mm[1] && !mm[3]) mm = null;
+    if (mm && /^(move|step|shift|advance)\s+(up|down|back)$/.test(t)) mm = null;
+    if (mm) { const n = Number(mm[1] ?? mm[3] ?? 0); const unitFeet = /feet|ft/.test(t); const dir = mm[2].replace(/backwards?|back/, 'back').replace('forward', 'up'); return { type: 'move', dir, squares: n ? (unitFeet ? Math.round(n / 5) : n) : undefined }; }
+  }
+  if (/^(dodge|defend|duck|brace|block|parry|go defensive|full defense)\b/.test(t)) return { type: 'dodge' };
   if (/^(flee|run away|run|retreat|escape|get out of here|leg it|bail|scram|run for it|disengage)\b/.test(t)) return { type: 'flee' };
   if (/^(surrender|give up|yield|i yield|i give up)$/.test(t)) return { type: 'surrender' };
   if (/^(hide|take cover and hide|hide in the shadows|duck behind)/.test(t)) return { type: 'hide' };

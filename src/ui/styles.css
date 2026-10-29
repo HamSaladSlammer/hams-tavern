@@ -168,3 +168,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .forge-preview .abil, .forge-preview .small { display: none; }
   .forge-preview .kv { grid-template-columns: repeat(3, auto 1fr); margin: 6px 0 0; font-size: .78em; }
 }
+
+/* ---------- battle map ---------- */
+.map { position: relative; flex: 0 0 auto; height: 34vh; min-height: 170px; max-height: 360px; background: #0d0a07; border-bottom: 1px solid var(--line); overflow: hidden; touch-action: manipulation; }
+.map.combat { height: 42vh; max-height: 440px; }
+.map canvas { display: block; }
+.map-menu { position: absolute; z-index: 5; display: flex; flex-direction: column; min-width: 150px; max-width: 240px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.5); overflow: hidden; }
+.map-menu button { text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 9px 12px; font-size: .86em; color: var(--ink); }
+.map-menu button:last-child { border-bottom: 0; }
+.map-menu button:active { background: color-mix(in srgb, var(--gold) 15%, var(--card)); }
+.tabs button.on { color: var(--gold); }

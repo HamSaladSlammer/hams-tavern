@@ -1,5 +1,6 @@
 import './ui/styles.css';
-import { handle, newState, suggestions, statusLine, peek, migrate, beginGame } from './engine/game';
+import { handle, newState, suggestions, statusLine, peek, migrate, beginGame, mapView } from './engine/game';
+import { BattleMap } from './ui/map';
 import { openForge } from './ui/forge';
 import type { GameState, LogLine } from './engine/types';
 import { backend, SAVE_KEY, PREFS_KEY } from './ui/storage';
@@ -15,8 +16,8 @@ let state: GameState = newState();
 const history: string[] = [];
 let histIdx = -1;
 
-interface Prefs { theme: 'dark' | 'light'; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; }
-let prefs: Prefs = { theme: 'dark', size: 'normal', dice: 'show' };
+interface Prefs { theme: 'dark' | 'light'; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; }
+let prefs: Prefs = { theme: 'dark', size: 'normal', dice: 'show', map: 'on' };
 try { prefs = { ...prefs, ...JSON.parse(backend.load(PREFS_KEY) ?? '{}') }; } catch { /* defaults */ }
 function applyPrefs() {
   const r = document.documentElement;
@@ -45,7 +46,19 @@ function render(lines: LogLine[], fresh = true) {
   refresh();
 }
 
+const mapEl = $('map');
+const battle = new BattleMap(mapEl, (cmd) => send(cmd));
+function refreshMap() {
+  const v = mapView(state);
+  const show = !!v && (prefs.map === 'on' || (prefs.map === 'combat' && v.inCombat));
+  mapEl.hidden = !show;
+  mapEl.classList.toggle('combat', !!v?.inCombat);
+  document.querySelector<HTMLButtonElement>('[data-panel=map]')?.classList.toggle('on', show);
+  if (show) battle.update(v);
+}
+
 function refresh() {
+  refreshMap();
   const st = statusLine(state);
   const stats = $('stats');
   if (st) {
@@ -144,7 +157,10 @@ function openPanel(kind: string) {
   }
   panel.hidden = false;
 }
-document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => (b.onclick = () => openPanel(b.dataset.panel!)));
+document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => (b.onclick = () => {
+  if (b.dataset.panel === 'map') { prefs.map = mapEl.hidden ? 'on' : (state.combat ? 'off' : 'combat'); applyPrefs(); refreshMap(); return; }
+  openPanel(b.dataset.panel!);
+}));
 $('panel-close').onclick = () => (panel.hidden = true);
 panel.addEventListener('click', (e) => { if (e.target === panel) panel.hidden = true; });
 
@@ -154,7 +170,7 @@ function opt<K extends keyof Prefs>(label: string, key: K, values: [Prefs[K], st
   const row = document.createElement('div'); row.className = 'row';
   for (const [v, name] of values) {
     const b = document.createElement('button'); b.textContent = name; if (prefs[key] === v) b.className = 'on';
-    b.onclick = () => { prefs[key] = v; applyPrefs(); openPanel('menu'); };
+    b.onclick = () => { prefs[key] = v; applyPrefs(); refreshMap(); openPanel('menu'); };
     row.appendChild(b);
   }
   wrap.appendChild(row);
@@ -169,6 +185,7 @@ function menu(body: HTMLElement) {
   body.appendChild(opt('Theme', 'theme', [['dark', 'Tavern (dark)'], ['light', 'Parchment']]));
   body.appendChild(opt('Text size', 'size', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']]));
   body.appendChild(opt('Dice rolls', 'dice', [['show', 'Show'], ['hide', 'Hide']]));
+  body.appendChild(opt('Battle map', 'map', [['on', 'Always'], ['combat', 'In fights'], ['off', 'Off']]));
   body.appendChild(menuButton('How to play', () => { panel.hidden = true; send('help'); }));
   body.appendChild(menuButton('Export save (for bug reports or another device)', exportSave));
   body.appendChild(menuButton('Import save', importSave));

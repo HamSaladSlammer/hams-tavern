@@ -105,7 +105,7 @@ export interface MonsterDef {
 }
 
 export type Condition = 'prone' | 'unconscious' | 'stable' | 'dead' | 'frightened' | 'dodging' | 'grappled' | 'surrendered' | 'fled' | 'hidden' | 'blessed' | 'shielded' | 'guided' | 'taunted'
-  | 'raging' | 'restrained' | 'charmed' | 'asleep' | 'halted' | 'marked' | 'hexed' | 'inspired' | 'sorcery' | 'reckless' | 'wildshape' | 'shield_spell' | 'favored' | 'mocked' | 'faerie' | 'frostbit' | 'shifted' | 'shell' | 'divine_favor' | 'fury' | 'jaws' | 'cry' | 'surprised' | 'charged' | 'shillelagh' | 'acted';
+  | 'raging' | 'restrained' | 'charmed' | 'asleep' | 'halted' | 'marked' | 'hexed' | 'inspired' | 'sorcery' | 'reckless' | 'wildshape' | 'shield_spell' | 'favored' | 'mocked' | 'faerie' | 'frostbit' | 'shifted' | 'shell' | 'divine_favor' | 'fury' | 'jaws' | 'cry' | 'surprised' | 'charged' | 'shillelagh' | 'acted' | 'ko';
 
 export interface Combatant {
   key: string; // unique in fight
@@ -123,6 +123,9 @@ export interface Combatant {
   ammoLoaded?: number;
   deathSaves?: { ok: number; fail: number };
   tauntedBy?: string;
+  x: number;
+  y: number;
+  reaction?: boolean; // reaction used this round
 }
 
 export interface Combat {
@@ -135,6 +138,11 @@ export interface Combat {
   usedAction: boolean;
   sneakUsed: boolean;
   fleeTo?: string;
+  moveLeft: number; // feet of movement left this turn (player)
+  dashed?: boolean;
+  disengaged?: boolean;
+  loc: string; // map id
+  blockers?: { x: number; y: number }[]; // bystanders standing on the map
 }
 
 export interface SpellSlots {
@@ -226,6 +234,9 @@ export interface GameState {
   stats: { kills: number; knockouts: number; insults: number };
   props: Record<string, PropState[]>; // props the oracle added, or that changed (broken, taken)
   lastObject: string | null;
+  pos: { x: number; y: number } | null; // where you stand on the current room's map
+  explored: Record<string, string>; // per room: squares seen ('1') for fog of war
+  bounty: number; // copper the Breda militia want from you
 }
 
 export interface PropState {

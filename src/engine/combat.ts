@@ -1,7 +1,7 @@
 // Turn-based combat. The player acts on their turn through parsed intents; foes and
 // companions act automatically. Defeat never ends the game: the Pale Queen wants witnesses.
 import type { Ctx } from '../content/types';
-import { ENCOUNTERS, courierLoot, checkChapelDone } from '../content/world';
+import { ENCOUNTERS, ROOMS, courierLoot, checkChapelDone } from '../content/world';
 import { d20, die, fmtMod, mod, pick, roll, combineAdv, type Adv } from './dice';
 import { MONSTERS, SPELLS, ITEMS, UNARMED, WEAPONS } from './srd';
 import type { Combatant, Condition, MonsterDef, WeaponDef, DamageType } from './types';
@@ -11,6 +11,8 @@ import {
 } from './character';
 import { expand, STRIKES, WEAPON_HITS, FLAVOR } from '../nlp/grammar';
 import { UNARMED_VERBS, type AttackStyle } from '../nlp/parse';
+import type { EncounterDef } from '../content/types';
+import { gridFor, dist, feet, hasLOS, coverBonus, costs, pathTo, approachSquare, freeNear, key as pkey, exitAt, type Pt, type Grid } from './grid';
 
 export interface CompanionDef { id: string; name: string; ac: number; maxHp: number; toHit: number; damage: string; dtype: DamageType; dex: number; verb: string; }
 export const COMPANIONS: Record<string, CompanionDef> = {
@@ -21,11 +23,13 @@ export const COMPANIONS: Record<string, CompanionDef> = {
 const has = (u: Combatant, k: Condition) => u.conditions.includes(k);
 const add = (u: Combatant, k: Condition) => { if (!has(u, k)) u.conditions.push(k); };
 const del = (u: Combatant, k: Condition) => { u.conditions = u.conditions.filter((x) => x !== k); };
-const out = (u: Combatant) => has(u, 'dead') || has(u, 'fled') || has(u, 'surrendered');
+const out = (u: Combatant) => has(u, 'dead') || has(u, 'fled') || has(u, 'surrendered') || has(u, 'ko');
 const down = (u: Combatant) => out(u) || has(u, 'unconscious');
 const disabled = (u: Combatant) => down(u) || has(u, 'asleep') || has(u, 'charmed');
 const mdef = (u: Combatant): MonsterDef | undefined => (u.monster ? MONSTERS[u.monster] : undefined);
 const isUndead = (u: Combatant) => !!mdef(u)?.tags.includes('undead');
+const NAMED = new Set(['merah', 'alistair', 'squib', 'sereza', 'garrick', 'smith', 'hetch', 'doss', 'merla', 'aldwin', 'sergeant']);
+const properName = (u: Combatant) => /\d$/.test(u.name) || !!u.companion || NAMED.has(u.monster ?? '') || (!!mdef(u) && u.name !== mdef(u)!.name);
 
 const WAKE: Record<string, string> = { chapel_yard: 'kessels_rest', nave: 'kessels_rest', vestry: 'kessels_rest', tower: 'kessels_rest', crypt: 'kessels_rest', kessels_rest: 'kessels_rest', foothills: 'foothills', thornwood: 'breda_square', breda_square: 'breda_square' };
 
@@ -55,17 +59,19 @@ function pcResists(c: Ctx, dtype: DamageType): boolean {
   return false;
 }
 
-export function startCombat(c: Ctx, encId: string) {
-  const enc = ENCOUNTERS[encId];
+export function startCombat(c: Ctx, encIdOrDef: string | EncounterDef) {
+  const enc = typeof encIdOrDef === 'string' ? ENCOUNTERS[encIdOrDef] : encIdOrDef;
+  const encId = enc?.id ?? String(encIdOrDef);
   if (!enc || c.s.combat) return;
+  if (typeof encIdOrDef !== 'string') DYNAMIC[enc.id] = enc;
   const units: Combatant[] = [];
   const pc = c.pc;
-  units.push({ key: 'pc', name: pc.name, side: 'party', isPc: true, hp: pc.hp, maxHp: pc.maxHp, ac: armorClass(pc), init: 0, conditions: [] });
+  units.push({ key: 'pc', name: pc.name, side: 'party', isPc: true, hp: pc.hp, maxHp: pc.maxHp, ac: armorClass(pc), init: 0, conditions: [], x: 0, y: 0 });
   for (const id of c.s.companions) {
     const d = COMPANIONS[id];
     if (!d) continue;
     const hp = c.s.companionHp[id] ?? d.maxHp;
-    units.push({ key: id, name: d.name, side: 'party', companion: id, hp: Math.max(1, hp), maxHp: d.maxHp, ac: d.ac, init: 0, conditions: [] });
+    units.push({ key: id, name: d.name, side: 'party', companion: id, hp: Math.max(1, hp), maxHp: d.maxHp, ac: d.ac, init: 0, conditions: [], x: 0, y: 0 });
   }
   const partySize = units.length;
   const counts: Record<string, number> = {};
@@ -76,9 +82,10 @@ export function startCombat(c: Ctx, encId: string) {
       const m = MONSTERS[mid];
       counts[mid] = (counts[mid] ?? 0) + 1;
       const total = enc.foes.filter(([x]) => x === mid).reduce((a, [, k]) => a + k, 0) + (enc.scaleWithParty && partySize >= 3 ? 1 : 0);
-      const name = total > 1 ? `${m.name} ${counts[mid]}` : m.name;
+      const fi = units.filter((u) => u.side === 'foe').length;
+      const name = enc.unitNames?.[fi] ?? enc.names?.[mid] ?? (total > 1 ? `${m.name} ${counts[mid]}` : m.name);
       const hp = Math.max(1, roll(c.rng, m.hp).total);
-      units.push({ key: `${mid}${counts[mid]}`, name, side: 'foe', monster: mid, hp, maxHp: hp, ac: m.ac, init: 0, conditions: [] });
+      units.push({ key: `${mid}${counts[mid]}`, name, side: 'foe', monster: mid, hp, maxHp: hp, ac: m.ac, init: 0, conditions: [], x: 0, y: 0 });
     }
   }
   for (const u of units) {
@@ -91,12 +98,201 @@ export function startCombat(c: Ctx, encId: string) {
   }
   if (enc.ambush && pc.feat !== 'watchful') for (const u of units) if (u.side === 'foe') u.init += 10;
   units.sort((a, b) => b.init - a.init);
-  c.s.combat = { round: 1, order: units.map((u) => u.key), turn: 0, units, encounterId: encId, usedAction: false, usedBonus: false, sneakUsed: false, fleeTo: enc.fleeTo };
+  const mapLoc = (c.flag('road_map') as string) || c.s.loc;
+  placeUnits(c, units, enc, mapLoc);
+  const g0 = gridFor(mapLoc);
+  const bystanders = mapLoc !== c.s.loc ? [] : (ROOMS[c.s.loc]?.npcs?.(c) ?? []).filter((id) => !c.flag(`${id}_dead`)).filter((id) => !(enc.npcIds ?? []).includes(id) && g0.npcSpots[id]).map((id) => g0.npcSpots[id]);
+  c.s.combat = { round: 1, order: units.map((u) => u.key), turn: 0, units, encounterId: encId, usedAction: false, usedBonus: false, sneakUsed: false, fleeTo: enc.fleeTo, moveLeft: pcSpeed(c), loc: mapLoc, blockers: bystanders };
   c.set('cb_last_hit', ''); c.set('cb_surprise_used', false); c.set('cb_charge_used', false);
   c.out('title', '⚔ Combat');
   c.narr(enc.intro);
   c.sys('Initiative: ' + units.map((u) => `${u.name} ${Math.floor(u.init)}`).join(' · '));
   runUntilPlayer(c);
+}
+
+// ---------- the grid ----------
+export const DYNAMIC: Record<string, EncounterDef> = {};
+export const encounterOf = (id: string) => ENCOUNTERS[id] ?? DYNAMIC[id];
+export function pcSpeed(c: Ctx) { return c.pc.conditions.includes('wildshape') ? 40 : (species(c.pc).speed ?? 30) + (c.pc.cls === 'monk' && c.pc.level >= 2 ? 10 : 0) + (c.pc.cls === 'barbarian' && c.pc.level >= 2 ? 0 : 0); }
+function unitSpeed(c: Ctx, u: Combatant) {
+  if (u.isPc) return pcSpeed(c);
+  if (u.companion) return u.companion === 'kettle' ? 40 : 30;
+  let sp = mdef(u)?.speed ?? 30;
+  if (has(u, 'restrained') || has(u, 'grappled')) sp = 0;
+  return sp;
+}
+export const gridOf = (c: Ctx): Grid => gridFor(c.s.combat?.loc ?? c.s.loc);
+const at = (u: Combatant): Pt => ({ x: u.x, y: u.y });
+function occupied(c: Ctx, except?: Combatant): Set<string> {
+  const set = new Set<string>();
+  for (const u of c.s.combat!.units) if (u !== except && !out(u) && !(has(u, 'dead'))) set.add(pkey(at(u)));
+  for (const b of c.s.combat!.blockers ?? []) set.add(pkey(b));
+  return set;
+}
+function placeUnits(c: Ctx, units: Combatant[], enc: EncounterDef, mapLoc: string) {
+  const g = gridFor(mapLoc);
+  const taken = new Set<string>();
+  for (const [id, p] of Object.entries(g.npcSpots)) if (mapLoc === c.s.loc && (ROOMS[mapLoc]?.npcs?.(c) ?? []).includes(id) && !(enc.npcIds ?? []).includes(id)) taken.add(pkey(p));
+  const put = (u: Combatant, p: Pt) => { const q = freeNear(g, p, taken); u.x = q.x; u.y = q.y; taken.add(pkey(q)); };
+  const start = mapLoc === c.s.loc ? c.s.pos ?? g.start : g.start;
+  const pcU = units.find((u) => u.isPc)!;
+  put(pcU, start);
+  let ci = 0;
+  for (const u of units.filter((x) => x.companion)) put(u, g.compSpawns[ci++] ?? { x: pcU.x + 1, y: pcU.y });
+  const spawns = [...g.foeSpawns].sort((a, b) => (enc.ambush ? dist(a, start) - dist(b, start) : dist(b, start) - dist(a, start)));
+  let fi = 0;
+  for (const u of units.filter((x) => x.side === 'foe')) {
+    const fixed = enc.spawnAt?.[u.monster!];
+    if (fixed) { put(u, fixed); continue; }
+    const sp = spawns[fi++ % Math.max(1, spawns.length)] ?? { x: g.w - 2, y: 1 };
+    put(u, sp);
+  }
+}
+/** Move a unit along a path, spending squares; provokes opportunity attacks when leaving reach. Returns squares moved. */
+function walk(c: Ctx, u: Combatant, path: Pt[], budget: number, provoke = true): number {
+  const g = gridOf(c);
+  let spent = 0;
+  for (const p of path) {
+    const stepCost = g.tiles[p.y][p.x] === '~' ? 2 : 1;
+    if (spent + stepCost > budget) break;
+    if (occupied(c, u).has(pkey(p))) break;
+    // leaving someone's reach?
+    if (provoke && !(u.isPc && c.s.combat!.disengaged)) {
+      const enemies = c.s.combat!.units.filter((e) => e.side !== u.side && !disabled(e) && !e.reaction && dist(at(e), at(u)) <= 1 && dist(at(e), p) > 1);
+      for (const e of enemies) { opportunity(c, e, u); if (!c.s.combat || down(u)) return spent; }
+    }
+    u.x = p.x; u.y = p.y;
+    spent += stepCost;
+  }
+  return spent;
+}
+function opportunity(c: Ctx, e: Combatant, target: Combatant) {
+  e.reaction = true;
+  if (e.isPc) {
+    const w = weaponById(c.pc.equipped.main) ?? UNARMED;
+    if (w.ranged) return;
+    c.out('sys', `${target.name} leaves your reach: opportunity attack!`);
+    doAttack(c, target, w, 'melee', 'strike');
+    return;
+  }
+  if (target.isPc || target.companion) {
+    c.out('sys', `${e.name} lashes out as ${target.isPc ? 'you pull' : `${target.name} pulls`} away.`);
+    if (e.side === 'foe') foeStrike(c, e, target);
+    else { const d = COMPANIONS[e.companion!]; if (d) { const r = d20(c.rng).natural + d.toHit; if (r >= target.ac) hurtFoe(c, target, roll(c.rng, d.damage).total, d.dtype, { before: (x) => c.out('hit', `${d.name} catches ${target.name}: ${x} ${d.dtype}.`) }); } }
+  }
+}
+function adjacentFoesOf(c: Ctx, u: Combatant) { return c.s.combat!.units.filter((e) => e.side !== u.side && !disabled(e) && dist(at(e), at(u)) <= 1); }
+/** Player: get within reach of target this turn, spending movement (and Dash if needed and allowed). */
+function closeIn(c: Ctx, t: Combatant, reach: number, needLOS: boolean, allowDash: boolean): 'ok' | 'dashed' | 'stuck' {
+  const cb = c.s.combat!;
+  const me = pcUnit(c);
+  const g = gridOf(c);
+  if (dist(at(me), at(t)) <= reach && (!needLOS || hasLOS(g, at(me), at(t)))) return 'ok';
+  const occ = occupied(c, me);
+  occ.delete(pkey(at(t)));
+  const ap = approachSquare(g, at(me), at(t), reach, occupied(c, me), needLOS);
+  if (!ap) { c.sys(`You can't find a way to ${t.name} from here.`); return 'stuck'; }
+  const map = costs(g, at(me), occupied(c, me));
+  const path = pathTo(map, ap.dest);
+  const budget = Math.floor(cb.moveLeft / 5);
+  if (ap.cost <= budget) {
+    const moved = walk(c, me, path, budget);
+    cb.moveLeft -= moved * 5;
+    if (moved) c.narr(`You ${moved >= 4 ? 'rush' : 'step'} ${moved >= 2 ? `${moved * 5} feet ` : ''}${reach > 1 ? 'into range' : `up to ${t.name}`}.`);
+    if (!c.s.combat || down(me)) return 'stuck';
+    return dist(at(me), at(t)) <= reach ? 'ok' : 'stuck';
+  }
+  // too far: move as far as we can, dash if allowed
+  if (allowDash && !cb.usedAction) {
+    cb.usedAction = true; cb.dashed = true;
+    const moved = walk(c, me, path, budget + Math.floor(pcSpeed(c) / 5));
+    cb.moveLeft = 0;
+    c.narr(`It's too far to strike this turn. You dash ${moved * 5} feet toward ${t.name}.`);
+    return 'dashed';
+  }
+  const moved = walk(c, me, path, budget);
+  cb.moveLeft -= moved * 5;
+  c.sys(moved ? `You move ${moved * 5} feet toward ${t.name}, but it's still out of reach.` : `${t.name} is out of reach (${feet(at(me), at(t))} ft away) and you've no movement left.`);
+  return 'stuck';
+}
+
+/** Player movement: to a square, toward/away from a creature, behind cover, or a direction. */
+export function playerMove(c: Ctx, where: { x?: number; y?: number; toward?: string; away?: boolean; dir?: string; squares?: number; cover?: boolean; dash?: boolean }) {
+  const cb = c.s.combat!;
+  const me = pcUnit(c);
+  const g = gridOf(c);
+  if (has(me, 'unconscious')) return;
+  if (where.dash) {
+    if (cb.usedAction) { c.sys('You\'ve already used your action, so you can\'t Dash.'); return; }
+    cb.usedAction = true; cb.dashed = true; cb.moveLeft += pcSpeed(c);
+    c.good(`You Dash: ${cb.moveLeft} feet of movement this turn.`);
+    return;
+  }
+  if (has(me, 'prone')) { del(me, 'prone'); cb.moveLeft = Math.max(0, cb.moveLeft - Math.floor(pcSpeed(c) / 2)); c.narr('You get up off the floor.'); }
+  if (unitSpeed(c, me) === 0 || has(me, 'grappled')) { c.sys('You can\'t move: you\'re held.'); return; }
+  const budget = Math.floor(cb.moveLeft / 5);
+  if (budget <= 0) { c.sys('You have no movement left this turn. (Dash to move again, or "end turn".)'); return; }
+  const occ = occupied(c, me);
+  const map = costs(g, at(me), occ);
+  let dest: Pt | null = null;
+  if (where.x !== undefined && where.y !== undefined) dest = { x: where.x, y: where.y };
+  else if (where.toward) {
+    const t = resolveTarget(c, where.toward) ?? resolveTarget(c, where.toward, 'party');
+    if (!t) { c.sys(`You don't see "${where.toward}".`); return; }
+    if (where.away) {
+      let best: Pt | null = null; let bd = -1;
+      for (const [k, v] of map) { if (v.c > budget) continue; const [x, y] = k.split(',').map(Number); const d = dist({ x, y }, at(t)); if (d > bd) { bd = d; best = { x, y }; } }
+      dest = best;
+    } else dest = approachSquare(g, at(me), at(t), 1, occ)?.dest ?? null;
+  } else if (where.cover) {
+    const foes = livingFoes(c);
+    let best: Pt | null = null; let score = -1;
+    for (const [k, v] of map) {
+      if (v.c > budget) continue;
+      const [x, y] = k.split(',').map(Number);
+      const p = { x, y };
+      const sc = foes.reduce((n, f) => n + (coverBonus(g, at(f), p) || !hasLOS(g, at(f), p) ? 3 : 0) + Math.min(3, dist(p, at(f))), 0) - v.c * 0.1;
+      if (sc > score) { score = sc; best = p; }
+    }
+    dest = best;
+  } else if (where.dir) {
+    const D: Record<string, [number, number]> = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0], up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0], back: [0, 0] };
+    const n = Math.min(budget, where.squares ?? budget);
+    if (where.dir === 'back') {
+      const near = livingFoes(c).sort((a, b) => dist(at(a), at(me)) - dist(at(b), at(me)))[0];
+      if (near) { playerMove(c, { toward: near.name, away: true }); return; }
+    }
+    const [dx, dy] = D[where.dir] ?? [0, 0];
+    let p = at(me);
+    for (let i = 0; i < n; i++) { const q = { x: p.x + dx, y: p.y + dy }; if (!map.has(pkey(q))) break; p = q; }
+    dest = p;
+  }
+  if (!dest) { c.sys('You can\'t get there.'); return; }
+  const target = map.get(pkey(dest));
+  if (!target) { c.sys('You can\'t get there from here.'); return; }
+  const path = pathTo(map, dest);
+  const moved = walk(c, me, path, budget);
+  cb.moveLeft -= moved * 5;
+  if (!c.s.combat) return;
+  const ex = exitAt(g, at(me));
+  if (ex !== null && moved > 0) { escapeVia(c, ex); return; }
+  c.narr(moved ? `You move ${moved * 5} feet.${target.c > budget ? ' That\'s as far as you get this turn.' : ''}${coverBonus(g, at(livingFoes(c)[0] ?? me), at(me)) ? ' You\'re behind cover (+2 AC against attacks through it).' : ''}` : 'You stay where you are.');
+  c.sys(`${cb.moveLeft} ft of movement left.`);
+  afterPlayerAction(c);
+}
+
+function escapeVia(c: Ctx, exitIdx: number) {
+  const room = c.s.loc;
+  if (c.s.combat!.loc !== room) { syncAfterCombat(c); c.s.combat = null; c.s.pos = null; c.out('good', 'You break off the road into the trees and lose them.'); return; }
+  const ex = ROOMS[room]?.exits[exitIdx];
+  const blocked = !ex || ex.hidden?.(c) || (ex.blocked && ex.blocked(c));
+  const enc = encounterOf(c.s.combat!.encounterId);
+  if (blocked) { c.narr(ex && !ex.hidden?.(c) ? 'You hit the door. It doesn\'t give.' : 'There\'s no way out there.'); afterPlayerAction(c); return; }
+  syncAfterCombat(c);
+  c.s.combat = null;
+  c.s.pos = null;
+  c.out('good', 'You break for the exit and get clear. Nobody follows you through.');
+  c.move(ex!.to !== room ? ex!.to : enc?.fleeTo ?? (c.flag('prev_loc') as string) ?? room);
 }
 
 function currentUnit(c: Ctx): Combatant { const cb = c.s.combat!; return unit(c, cb.order[cb.turn]); }
@@ -144,7 +340,8 @@ function runUntilPlayer(c: Ctx) {
     const u = currentUnit(c);
     if (u.isPc) {
       const cb = c.s.combat;
-      cb.usedAction = false; cb.usedBonus = false; cb.sneakUsed = false;
+      cb.usedAction = false; cb.usedBonus = false; cb.sneakUsed = false; cb.dashed = false; cb.disengaged = false;
+      cb.moveLeft = unitSpeed(c, u); u.reaction = false;
       c.set('cb_last_hit', '');
       del(u, 'dodging'); del(u, 'shield_spell'); del(u, 'reckless'); del(u, 'shell');
       if (has(u, 'prone') && !has(u, 'unconscious')) { del(u, 'prone'); c.narr('You scramble back to your feet.'); }
@@ -154,13 +351,15 @@ function runUntilPlayer(c: Ctx) {
         nextTurn(c);
         continue;
       }
-      c.sys(`Round ${cb.round} — your turn. ${u.hp}/${u.maxHp} HP${c.pc.tempHp ? ` (+${c.pc.tempHp} temp)` : ''}.`);
+      const near = livingFoes(c).sort((a, b) => dist(at(a), at(u)) - dist(at(b), at(u)))[0];
+      c.sys(`Round ${cb.round} — your turn. ${u.hp}/${u.maxHp} HP${c.pc.tempHp ? ` (+${c.pc.tempHp} temp)` : ''} · ${cb.moveLeft} ft to move${near ? ` · nearest: ${near.name}, ${feet(at(near), at(u))} ft` : ''}.`);
       return;
     }
     if (!down(u)) {
+      u.reaction = false;
       if (u.side === 'foe') foeAct(c, u);
       else companionAct(c, u);
-      add(u, 'acted');
+      if (c.s.combat) add(u, 'acted');
     }
     if (!c.s.combat) return;
     nextTurn(c);
@@ -202,6 +401,13 @@ function hurtFoe(c: Ctx, t: Combatant, amount: number, dtype: DamageType, opts: 
       if (sv >= 5 + dmg) { t.hp = 1; c.narr(expand(c.rng, FLAVOR, 'undead_fortitude', { target: def.name.toLowerCase() }) + '.'); c.out('roll', `Undead Fortitude: ${sv} vs DC ${5 + dmg} — it stays up with 1 HP.`); return dmg; }
     }
     t.hp = 0;
+    const enc = encounterOf(c.s.combat?.encounterId ?? '');
+    const canKO = !!def && !def.tags.includes('undead') && !def.tags.includes('plant') && !def.tags.includes('construct');
+    if (canKO && (enc?.nonlethal || c.flag('cb_subdue'))) {
+      add(t, 'ko');
+      c.out('good', `${t.name} ${pick(c.rng, ['goes down, out cold', 'drops like a sack of flour', 'folds up and stays down', 'hits the floor and doesn\'t get up'])}.`);
+      return dmg;
+    }
     add(t, 'dead');
     const key = t.monster === 'zombie' || t.monster === 'dead_wolf' ? 'zombie_down' : t.monster === 'skeleton' ? 'skeleton_down' : t.monster === 'wolf' ? 'wolf_down' : 'other_down';
     c.out('good', expand(c.rng, FLAVOR, key, { target: t.name }) + '.');
@@ -357,7 +563,24 @@ export function playerAttack(c: Ctx, style: AttackStyle, verb: string, targetNam
   }
   if (w.ammo === 'arrow' && !hasItem(pc, 'arrow')) { c.sys('You\'re out of arrows.'); return; }
   if (w.thrown && style === 'thrown' && !w.id.startsWith('imp:') && !w.id.startsWith('prop:') && !hasItem(pc, w.id)) { c.sys(`You don't have a ${w.name}.`); return; }
+  // get into position
+  const isRanged = w.ranged || style === 'thrown';
+  const [rn, rl] = w.range ?? (w.ranged ? [80, 320] : style === 'thrown' ? [20, 60] : [5, 5]);
+  const reach = isRanged ? Math.floor(rl / 5) : 1;
+  const pos = closeIn(c, t, reach, isRanged, !bonus);
+  if (pos === 'dashed') { c.s.lastTarget = t.key; afterPlayerAction(c); return; }
+  if (pos === 'stuck') return;
+  void rn;
+  const encNow = encounterOf(c.s.combat!.encounterId);
+  const fistsOnly = w.id === 'unarmed' || w.id.startsWith('imp:') || w.id.startsWith('prop:') || w.id === 'wild_bite';
+  if (encNow?.nonlethal && !fistsOnly) {
+    encNow.nonlethal = false;
+    c.out('bad', `Steel comes out. The whole room goes silent at once. This isn't a brawl any more.`);
+    c.set('brawl_escalated', true);
+  }
   useAction(c, bonus);
+  const tdef = mdef(t);
+  c.set('cb_subdue', !!(c.flag('subdue_intent') || ((w.id === 'unarmed' || w.id.startsWith('imp:') || w.id.startsWith('prop:')) && tdef?.tags.includes('humanoid'))));
   if (bonus) c.sys('Martial Arts: a bonus-action strike.');
   doAttack(c, t, w, style, verb, limb);
   c.s.lastTarget = t.key;
@@ -382,8 +605,15 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   const me = pcUnit(c);
   const ranged = w.ranged || style === 'thrown';
   const strMelee = !ranged && attackAbility(pc, w) === 'str';
+  const g = gridOf(c);
+  const range = w.range ?? (w.ranged ? [80, 320] : [20, 60]);
+  const longShot = ranged && feet(at(me), at(t)) > range[0];
+  const crowded = ranged && adjacentFoesOf(c, me).length > 0;
+  const cover = coverBonus(g, at(me), at(t), c.s.combat!.units.filter((u) => u !== me && u !== t && !out(u)).map(at));
   const advFlag = has(me, 'hidden') || has(t, 'guided') || has(t, 'restrained') || has(t, 'faerie') || has(t, 'asleep') || has(me, 'cry') || (!ranged && has(t, 'prone')) || (has(me, 'reckless') && strMelee);
-  const disFlag = has(me, 'prone') || (ranged && has(t, 'prone')) || (pc.drunk >= 3);
+  const disFlag = has(me, 'prone') || (ranged && has(t, 'prone')) || (pc.drunk >= 3) || longShot || crowded;
+  if (longShot) c.sys('Long range: disadvantage.');
+  if (crowded) c.sys('Shooting with an enemy in your face: disadvantage.');
   const adv = combineAdv(advFlag, disFlag);
   del(me, 'hidden'); del(t, 'guided'); del(me, 'cry');
   let r = d20(c.rng, adv);
@@ -393,11 +623,12 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   const bless = has(me, 'blessed') ? die(c.rng, 4) : 0;
   let natural = r.natural;
   let total = natural + toHit + bless;
-  const lk2 = luckyReroll(c, natural, total, t.ac);
+  const lk2 = luckyReroll(c, natural, total, t.ac + coverBonus(gridOf(c), at(me), at(t)));
   if (lk2.note) { natural = lk2.natural; total = natural + toHit + bless + lk2.extra; c.sys(lk2.note); }
   const crit = natural === 20 || (has(t, 'asleep') && !ranged);
-  const hit = crit || (natural !== 1 && total >= t.ac);
-  c.out('roll', `🎲 ${w.name} vs ${t.name}: d20${r.rolls.length > 1 ? `(${r.rolls.join(',')} ${r.adv})` : ''} ${natural} ${fmtMod(toHit)}${bless ? ` +${bless} bless` : ''}${lk2.extra ? ` +${lk2.extra}` : ''} = ${total} vs AC ${t.ac}${crit ? ' — CRITICAL!' : hit ? ' — hit' : ' — miss'}`);
+  const tac = t.ac + cover;
+  const hit = crit || (natural !== 1 && total >= tac);
+  c.out('roll', `🎲 ${w.name} vs ${t.name}: d20${r.rolls.length > 1 ? `(${r.rolls.join(',')} ${r.adv})` : ''} ${natural} ${fmtMod(toHit)}${bless ? ` +${bless} bless` : ''}${lk2.extra ? ` +${lk2.extra}` : ''} = ${total} vs AC ${t.ac}${cover ? ` +${cover} cover` : ''}${crit ? ' — CRITICAL!' : hit ? ' — hit' : ' — miss'}`);
   if (w.category === 'firearm') {
     pc.ammo[w.id] = (pc.ammo[w.id] ?? 1) - 1;
     if (r.natural === 1) { c.set(`jam_${w.id}`, true); c.out('bad', `Your ${w.name} jams.`); }
@@ -411,7 +642,7 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   const natural_wpn = species(pc).weapon;
   const isUnarmed = w.id === 'unarmed' || wild;
   const lk = isUnarmed ? limbKey(verb, natural_wpn?.verbs) : null;
-  const tname = /\d$/.test(t.name) || t.monster === 'merah' || t.companion ? t.name : `the ${t.name.toLowerCase()}`;
+  const tname = properName(t) ? t.name : `the ${t.name.toLowerCase()}`;
   const spot = limb ?? expand(c.rng, STRIKES, isUndead(t) ? 'undead_spot' : 'spot').toLowerCase();
   const improvisedHit = w.id.startsWith('imp:') || w.id.startsWith('prop:');
   if (!hit) {
@@ -430,7 +661,7 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   const extras: string[] = [];
   if (has(me, 'raging') && strMelee) { dmg += 2; extras.push('+2 rage'); }
   let sneak = 0;
-  const allyNear = c.s.combat!.units.some((u) => u.side === 'party' && !u.isPc && !down(u));
+  const allyNear = c.s.combat!.units.some((u) => u.side === 'party' && !u.isPc && !down(u) && dist(at(u), at(t)) <= 1);
   if (pc.cls === 'rogue' && !c.s.combat!.sneakUsed && (w.finesse || w.ranged) && (adv === 'adv' || allyNear) && adv !== 'dis') { sneak = roll(c.rng, '1d6', crit).total; c.s.combat!.sneakUsed = true; extras.push(`${sneak} sneak attack`); }
   dmg += sneak;
   if (has(t, 'marked')) { const d = roll(c.rng, pc.cls === 'ranger' && isUndead(t) ? '1d8' : '1d6', crit).total; dmg += d; extras.push(`${d} hunter's mark`); }
@@ -479,6 +710,8 @@ function limbKey(verb: string, natural?: string[]): string {
 function verbWord(verb: string) { return verb.replace(/-/g, ' '); }
 
 // ---------- spells ----------
+const SELF_AREA = new Set(['burning_hands', 'thunderwave', 'thunderclap', 'hearthword', 'tremor', 'mire_gnats', 'bonfire']);
+
 export function findSpell(name: string) {
   const n = name.toLowerCase().trim();
   return Object.values(SPELLS).find((s) => s.aliases.includes(n) || s.name.toLowerCase() === n || s.id === n) ?? Object.values(SPELLS).find((s) => s.aliases.some((a) => n.startsWith(a)));
@@ -504,6 +737,29 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
   if (sp.level === 1 && !freeMark && !freeArmor && pc.slots.used >= pc.slots.max) { c.sys(`You have no spell slots left. They come back after a ${pc.cls === 'warlock' ? 'short' : 'long'} rest.`); return; }
   if (sp.id === 'divine_smite') { playerSmite(c); return; }
   if (!cb) { castOutside(c, sp.id, targetName); return; }
+  // range and area
+  const offensive = ['attack', 'save', 'control', 'auto', 'mark'].includes(sp.kind);
+  let areaTargets: Combatant[] | null = null;
+  if (offensive) {
+    const meU = pcUnit(c);
+    const g = gridOf(c);
+    if (sp.aoe && SELF_AREA.has(sp.id)) {
+      areaTargets = livingFoes(c).filter((f) => dist(at(f), at(meU)) <= 3 && hasLOS(g, at(meU), at(f))).slice(0, sp.aoe + 1);
+      if (!areaTargets.length) {
+        const t0 = resolveTarget(c, targetName);
+        if (t0) { const r = closeIn(c, t0, 2, true, false); if (r === 'stuck' && !c.s.combat) return; }
+        areaTargets = livingFoes(c).filter((f) => dist(at(f), at(meU)) <= 3 && hasLOS(g, at(meU), at(f))).slice(0, sp.aoe + 1);
+        if (!areaTargets.length) { c.sys(`${sp.name} reaches 15 feet from you. Nobody's that close.`); return; }
+      }
+    } else {
+      const t0 = resolveTarget(c, targetName);
+      if (!t0) { c.sys('No target.'); return; }
+      const reach = (sp.ranged === false && sp.kind === 'attack') || sp.id === 'inflict_wounds' ? 1 : sp.kind === 'attack' ? 24 : 12;
+      const r = closeIn(c, t0, reach, true, false);
+      if (r !== 'ok') return;
+      if (sp.aoe) areaTargets = [t0, ...livingFoes(c).filter((f) => f !== t0 && dist(at(f), at(t0)) <= 2)].slice(0, sp.aoe);
+    }
+  }
   if (!useAction(c, !!sp.bonusAction)) return;
   if (freeMark) res(c, 'favored')!.used += 1; else if (!freeArmor) useSlot(c, sp.level);
   const me = pcUnit(c);
@@ -536,7 +792,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
     }
     c.s.lastTarget = t.key;
   } else if (sp.kind === 'save') {
-    const targets = sp.aoe ? livingFoes(c).slice(0, sp.aoe) : [resolveTarget(c, targetName)].filter(Boolean) as Combatant[];
+    const targets = sp.aoe ? (areaTargets ?? livingFoes(c).slice(0, sp.aoe)) : [resolveTarget(c, targetName)].filter(Boolean) as Combatant[];
     if (!targets.length) { c.sys('No target.'); return; }
     c.out('hit', saveLine(sp.id));
     for (const t of targets) {
@@ -554,7 +810,7 @@ export function playerCast(c: Ctx, spellName: string, targetName?: string) {
       if (!ok && !down(t) && sp.effect) applyEffect(c, t, sp.effect);
     }
   } else if (sp.kind === 'control') {
-    const targets = sp.aoe ? livingFoes(c).slice(0, sp.aoe) : [resolveTarget(c, targetName)].filter(Boolean) as Combatant[];
+    const targets = sp.aoe ? (areaTargets ?? livingFoes(c).slice(0, sp.aoe)) : [resolveTarget(c, targetName)].filter(Boolean) as Combatant[];
     if (!targets.length) { c.sys('No target.'); return; }
     c.out('hit', saveLine(sp.id));
     for (const t of targets) {
@@ -742,7 +998,7 @@ export function playerFeature(c: Ctx, name: string, targetName?: string) {
     if (!useAction(c)) return;
     r.used += 1;
     c.out('hit', 'You raise your holy symbol and speak a word the dead remember. Light spills from it.');
-    for (const t of livingFoes(c).filter((u) => isUndead(u))) {
+    for (const t of livingFoes(c).filter((u) => isUndead(u) && dist(at(u), at(pcUnit(c))) <= 6)) {
       const sv = d20(c.rng).natural + mod(mdef(t)!.abilities.wis);
       if (sv < spellDC(pc)) { add(t, 'fled'); c.out('good', `${t.name} turns and flees into the dark.`); }
       else c.out('miss', `${t.name} shudders but holds its ground.`);
@@ -754,7 +1010,10 @@ export function playerFeature(c: Ctx, name: string, targetName?: string) {
     const dtype = (variant(pc)?.breath ?? 'fire') as DamageType;
     const dc = 8 + am(pc, 'con') + prof(pc);
     c.out('hit', `You draw a deep breath and exhale a roaring blast of ${dtype}.`);
-    for (const t of livingFoes(c).slice(0, 3)) {
+    const me2 = pcUnit(c);
+    const inCone = livingFoes(c).filter((f) => dist(at(f), at(me2)) <= 3 && hasLOS(gridOf(c), at(me2), at(f)));
+    if (!inCone.length) c.narr('Nobody is close enough to catch it (15 feet). The air shimmers, wasted.');
+    for (const t of inCone.slice(0, 3)) {
       const sv = d20(c.rng).natural + mod(mdef(t)!.abilities.dex);
       let d = roll(c.rng, '1d10').total; if (sv >= dc) d = Math.floor(d / 2);
       hurtFoe(c, t, d, dtype, { before: (dealt) => c.out('roll', `💥 ${t.name} (Dex ${sv} vs DC ${dc}) takes ${dealt} ${dtype}.`) });
@@ -849,6 +1108,10 @@ function escapeNow(c: Ctx, how: string) {
 export function playerShove(c: Ctx, verb: string, targetName: string | undefined, grapple: boolean) {
   const t = resolveTarget(c, targetName);
   if (!t) { c.sys('Shove whom?'); return; }
+  if (c.s.combat!.usedAction) { c.sys('You have already used your action this turn.'); return; }
+  const pos = closeIn(c, t, 1, false, true);
+  if (pos === 'dashed') { afterPlayerAction(c); return; }
+  if (pos === 'stuck') return;
   if (!useAction(c)) return;
   const pc = c.pc;
   const dc = 8 + am(pc, 'str') + prof(pc) + (species(pc).flags?.includes('powerful') ? 1 : 0);
@@ -921,18 +1184,41 @@ export function playerUsePotion(c: Ctx, targetName?: string) {
 export function playerFlee(c: Ctx, cunning = false) {
   const cb = c.s.combat!;
   const pc = c.pc;
-  const bonusDisengage = (pc.cls === 'rogue' && pc.level >= 2) || !!species(pc).flags?.includes('nimble');
-  if (!useAction(c, cunning || bonusDisengage)) return;
-  const foes = livingFoes(c).filter((u) => !disabled(u) && !has(u, 'restrained'));
-  const slow = foes.every((u) => (mdef(u)?.speed ?? 30) < 30);
-  const dc = bonusDisengage ? 0 : slow ? 5 : 10 + foes.length * 2;
-  if (dc === 0 || c.check('acrobatics', dc)) {
-    const to = cb.fleeTo ?? (c.flag('prev_loc') as string) ?? c.s.loc;
-    syncAfterCombat(c);
-    c.s.combat = null;
-    c.out('good', 'You break away and run, and keep running until the sounds of pursuit fade.');
-    c.move(to);
-  } else { c.out('bad', 'You try to break away, but they cut you off.'); afterPlayerAction(c); }
+  const me = pcUnit(c);
+  const g = gridOf(c);
+  const bonusDisengage = (pc.cls === 'rogue' && pc.level >= 2) || !!species(pc).flags?.includes('nimble') || cunning;
+  // find the nearest usable exit
+  const room = cb.loc === c.s.loc ? ROOMS[c.s.loc] : { exits: Object.keys(g.exits).map(() => ({ to: c.s.loc, names: [], label: '', minutes: 0 })) } as unknown as typeof ROOMS[string];
+  const occ = occupied(c, me);
+  const map = costs(g, at(me), occ);
+  let best: { idx: number; p: Pt; cost: number } | null = null;
+  for (const [i, pts] of Object.entries(g.exits)) {
+    const ex = room?.exits[Number(i)];
+    if (!ex || ex.hidden?.(c) || ex.blocked?.(c)) continue;
+    for (const p of pts) { const v = map.get(pkey(p)); if (v && (!best || v.c < best.cost)) best = { idx: Number(i), p, cost: v.c }; }
+  }
+  if (!best) {
+    // nowhere on the map to run: old-fashioned check
+    if (!useAction(c, bonusDisengage)) return;
+    const foes = livingFoes(c).filter((u) => !disabled(u) && !has(u, 'restrained'));
+    const dc = bonusDisengage ? 0 : 10 + foes.length * 2;
+    if (dc === 0 || c.check('acrobatics', dc)) { const to = cb.fleeTo ?? (c.flag('prev_loc') as string) ?? c.s.loc; syncAfterCombat(c); c.s.combat = null; c.s.pos = null; c.out('good', 'You break away and run, and keep running until the sounds of pursuit fade.'); c.move(to); }
+    else { c.out('bad', 'You try to break away, but they cut you off.'); afterPlayerAction(c); }
+    return;
+  }
+  // Disengage (bonus for rogues), else Dash with the action
+  if (bonusDisengage && !cb.usedBonus) { cb.usedBonus = true; cb.disengaged = true; c.narr('You slip out of reach (Disengage).'); }
+  else if (!cb.usedAction) { cb.usedAction = true; cb.disengaged = true; c.narr('You disengage and back toward the exit.'); }
+  let budget = Math.floor(cb.moveLeft / 5);
+  if (best.cost > budget && !cb.usedAction) { cb.usedAction = true; budget += Math.floor(pcSpeed(c) / 5); c.narr('You run for it.'); }
+  const moved = walk(c, me, pathTo(map, best.p), budget);
+  cb.moveLeft = Math.max(0, cb.moveLeft - moved * 5);
+  if (!c.s.combat) return;
+  if (exitAt(g, at(me)) !== null) { escapeVia(c, best.idx); return; }
+  c.narr(`You run ${moved * 5} feet toward the way out. Not there yet.`);
+  cb.moveLeft = 0;
+  afterPlayerAction(c);
+  if (c.s.combat && cb.usedAction) endPlayerTurn(c);
 }
 
 export function playerSpare(c: Ctx, targetName?: string) {
@@ -1012,24 +1298,60 @@ function foeAct(c: Ctx, u: Combatant) {
   if (u.monster === 'skeleton' && die(c.rng, 6) === 1) { c.narr(`${u.name} stops mid-stride and stands perfectly still, as if it has forgotten its orders. Her control is weak.`); return; }
   const party = c.s.combat!.units.filter((x) => x.side === 'party' && !down(x));
   if (!party.length) return;
-  let target: Combatant;
-  const me = party.find((x) => x.isPc);
-  if (has(u, 'taunted') && me) target = me;
-  else if (me && (party.length === 1 || die(c.rng, 2) === 1)) target = me;
-  else target = pick(c.rng, party);
+  const g = gridOf(c);
   const atk = def.attacks[0];
-  const packAlly = def.traits?.includes('pack tactics') && c.s.combat!.units.some((x) => x !== u && x.side === 'foe' && !down(x));
+  const reach = atk.ranged ? 16 : 1;
+  const speedSq = Math.floor(unitSpeed(c, u) / 5);
+  // choose a target: taunts first, then whoever is closest (with a lean toward you)
+  const me = party.find((x) => x.isPc);
+  let target: Combatant;
+  if (has(u, 'taunted') && me) target = me;
+  else {
+    const scored = party.map((p) => ({ p, d: dist(at(p), at(u)) - (p.isPc ? 1 : 0) + (c.rng ? die(c.rng, 3) / 3 : 0) }));
+    scored.sort((x, y) => x.d - y.d);
+    target = scored[0].p;
+  }
+  if (dist(at(u), at(target)) > reach || (atk.ranged && !hasLOS(g, at(u), at(target)))) {
+    // also consider anyone already in reach
+    const inReach = party.find((p) => dist(at(p), at(u)) <= reach && (!atk.ranged || hasLOS(g, at(u), at(p))));
+    if (inReach) target = inReach;
+    else {
+      const ap = approachSquare(g, at(u), at(target), reach, occupied(c, u), !!atk.ranged);
+      if (!ap) { c.narr(`${u.name} can't find a way to reach you.`); return; }
+      const path = pathTo(costs(g, at(u), occupied(c, u)), ap.dest);
+      const moved = walk(c, u, path, speedSq);
+      if (!c.s.combat || down(u)) return;
+      if (dist(at(u), at(target)) > reach) { if (moved) c.narr(`${u.name} ${pick(c.rng, ['closes in', 'advances', 'comes on', 'shambles closer', 'circles toward you'])} (${feet(at(u), at(target))} ft away).`); return; }
+    }
+  } else if (atk.ranged && dist(at(u), at(target)) <= 1) {
+    // ranged foes back off a step
+    const map = costs(g, at(u), occupied(c, u));
+    let best: Pt | null = null;
+    for (const [k, v] of map) { if (v.c > Math.min(2, speedSq)) continue; const [x, y] = k.split(',').map(Number); if (dist({ x, y }, at(target)) >= 2 && hasLOS(g, { x, y }, at(target))) { best = { x, y }; break; } }
+    if (best) walk(c, u, pathTo(map, best), speedSq);
+    if (!c.s.combat || down(u)) return;
+  }
+  foeStrike(c, u, target);
+}
+
+function foeStrike(c: Ctx, u: Combatant, target: Combatant) {
+  const def = mdef(u)!;
+  const atk = def.attacks[0];
+  const g = gridOf(c);
+  const packAlly = def.traits?.includes('pack tactics') && c.s.combat!.units.some((x) => x !== u && x.side === 'foe' && !down(x) && dist(at(x), at(target)) <= 1);
   const grappledOther = has(u, 'grappled') && !target.isPc;
   const debuffed = has(u, 'mocked') || has(u, 'frostbit');
   del(u, 'mocked'); del(u, 'frostbit');
-  const adv = combineAdv(!!packAlly || (has(target, 'prone') && !atk.ranged) || (!!target.isPc && has(target, 'reckless')), has(target, 'dodging') || grappledOther || debuffed || has(u, 'restrained'));
+  const cover = coverBonus(g, at(u), at(target), c.s.combat!.units.filter((x) => x !== u && x !== target && !out(x)).map(at));
+  const crowded = !!atk.ranged && adjacentFoesOf(c, u).length > 0;
+  const adv = combineAdv(!!packAlly || (has(target, 'prone') && !atk.ranged) || (!!target.isPc && has(target, 'reckless')), has(target, 'dodging') || grappledOther || debuffed || has(u, 'restrained') || crowded || (!!atk.ranged && has(target, 'prone')));
   const r = d20(c.rng, adv);
-  const ac = target.isPc ? pcAC(c) : target.ac;
+  const ac = (target.isPc ? pcAC(c) : target.ac) + cover;
   const tot = r.natural + atk.toHit;
   const crit = r.natural === 20;
   const hit = crit || (r.natural !== 1 && tot >= ac);
   const tname = target.isPc ? 'you' : target.name;
-  if (!hit) { c.out('miss', `${u.name} ${atk.verb ?? 'attacks'} ${tname} and misses. (${tot} vs AC ${ac})`); return; }
+  if (!hit) { c.out('miss', `${u.name} ${atk.verb ?? 'attacks'} ${tname} and misses. (${tot} vs AC ${ac}${cover ? ', cover helps' : ''})`); return; }
   let dmg = roll(c.rng, atk.damage, crit).total;
   if (atk.extra) dmg += roll(c.rng, atk.extra.damage, crit).total;
   hurtParty(c, target, dmg, atk.dtype, u.name, (dealt) => c.out('bad', `${u.name} ${atk.verb ?? 'hits'} ${tname}${crit ? ' — a critical hit' : ''}: ${dealt} damage.${target.isPc ? ` (${Math.max(0, c.pc.hp - dealt)}/${c.pc.maxHp} HP)` : ''}`));
@@ -1052,7 +1374,17 @@ function companionAct(c: Ctx, u: Combatant) {
   if (has(u, 'prone')) del(u, 'prone');
   const foes = livingFoes(c).filter((x) => !has(x, 'charmed'));
   if (!foes.length) return;
-  const t = foes.slice().sort((a, b) => a.hp - b.hp)[0];
+  const g = gridOf(c);
+  const reach = u.companion === 'alistair' ? 1 : 1;
+  let t = foes.slice().sort((a, b) => dist(at(a), at(u)) - dist(at(b), at(u)) || a.hp - b.hp)[0];
+  const already = foes.filter((f) => dist(at(f), at(u)) <= reach).sort((a, b) => a.hp - b.hp)[0];
+  if (already) t = already;
+  else {
+    const ap = approachSquare(g, at(u), at(t), reach, occupied(c, u));
+    if (ap) walk(c, u, pathTo(costs(g, at(u), occupied(c, u)), ap.dest), Math.floor(unitSpeed(c, u) / 5));
+    if (!c.s.combat || down(u)) return;
+    if (dist(at(u), at(t)) > reach) { c.narr(`${d.name} ${u.companion === 'kettle' ? 'bounds' : 'strolls'} toward ${t.name}.`); return; }
+  }
   const adv = combineAdv(has(t, 'prone') || has(t, 'guided') || has(t, 'faerie') || has(t, 'restrained'), false);
   const r = d20(c.rng, adv);
   const tot = r.natural + d.toHit;
@@ -1080,6 +1412,7 @@ function deathSave(c: Ctx) {
 function syncAfterCombat(c: Ctx) {
   const cb = c.s.combat!;
   const me = pcUnit(c);
+  c.s.pos = cb.loc === c.s.loc ? { x: me.x, y: me.y } : null;
   c.pc.hp = Math.max(0, me.hp);
   for (const u of cb.units) if (u.companion) c.s.companionHp[u.companion] = has(u, 'unconscious') ? 1 : u.hp;
   c.pc.conditions = c.pc.conditions.filter((x) => x !== 'shillelagh');
@@ -1088,7 +1421,8 @@ function syncAfterCombat(c: Ctx) {
 
 function victory(c: Ctx) {
   const cb = c.s.combat!;
-  const enc = ENCOUNTERS[cb.encounterId];
+  const enc = encounterOf(cb.encounterId);
+  lastFight.units = cb.units.map((u) => ({ ...u, conditions: [...u.conditions] }));
   const me = pcUnit(c);
   if (has(me, 'unconscious')) { me.hp = 1; c.narr('You come to with your companions standing over you.'); }
   syncAfterCombat(c);
@@ -1096,7 +1430,7 @@ function victory(c: Ctx) {
   const pelts = cb.units.filter((u) => u.monster === 'wolf' && has(u, 'dead')).length;
   for (const u of cb.units.filter((x) => x.side === 'foe')) {
     const def = mdef(u)!;
-    if (has(u, 'dead') || has(u, 'surrendered') || has(u, 'charmed')) xp += def.xp;
+    if (has(u, 'dead') || has(u, 'surrendered') || has(u, 'charmed') || has(u, 'ko')) xp += def.xp;
     else if (has(u, 'fled') || has(u, 'frightened')) xp += Math.floor(def.xp / 2);
   }
   const merah = cb.units.find((u) => u.monster === 'merah');
@@ -1117,8 +1451,19 @@ function victory(c: Ctx) {
   enc?.onWin?.(c);
 }
 
+export const lastFight: { units: Combatant[] } = { units: [] };
+
 function defeat(c: Ctx, why: 'down' | 'death' | 'surrender') {
   const pc = c.pc;
+  const enc = encounterOf(c.s.combat?.encounterId ?? '');
+  if (enc?.onLose) {
+    lastFight.units = c.s.combat!.units.map((u) => ({ ...u, conditions: [...u.conditions] }));
+    c.s.combat = null;
+    pc.hp = Math.max(1, Math.floor(pc.maxHp / 3)); pc.conditions = []; pc.deathSaves = { ok: 0, fail: 0 }; pc.wildHp = 0;
+    c.out('title', 'Darkness');
+    enc.onLose(c);
+    return;
+  }
   const to = (c.s.loc in WAKE) ? WAKE[c.s.loc] : 'breda_square';
   c.s.combat = null;
   c.out('title', 'Darkness');
@@ -1135,7 +1480,7 @@ function defeat(c: Ctx, why: 'down' | 'death' | 'surrender') {
   if (valuables.length) { const v = pick(c.rng, valuables); lostItem = itemName(v.id); removeItem(pc, v.id, 1); }
   for (const id of c.s.companions) c.s.companionHp[id] = Math.max(1, Math.floor(COMPANIONS[id].maxHp / 2));
   c.s.chaos = Math.min(9, c.s.chaos + 1);
-  c.s.loc = to; c.s.talkingTo = null;
+  c.s.loc = to; c.s.talkingTo = null; c.s.pos = null;
   c.narr(`You wake at dawn${to === 'breda_square' ? ' at the edge of Breda' : to === 'kessels_rest' ? " at Kessel's Rest, curled under the dome of the old wayshrine" : ', on cold ground'}, aching, alive. ${lost || lostItem ? `Someone went through your pack while you were out${lost ? `: ${Math.round(lost / 100)} gold is gone` : ''}${lostItem ? `${lost ? ', and so is' : ': gone is'} your ${lostItem.toLowerCase()}` : ''}.` : ''} The dead didn't kill you. They wanted you to wake up and remember.`);
   c.sys(`You have ${pc.hp}/${pc.maxHp} HP. (Undead in Lahti knock people down rather than kill them. Something wants witnesses.)`);
 }

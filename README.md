@@ -9,6 +9,12 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.3
+
+- **Battle map.** Every room has a square grid map: walls, doors, furniture, tokens for you, your companions, townsfolk and monsters. Fog of war in dark places. Tap a square to walk, a person to talk, a thing to look at, climb, break or take, and a door to leave.
+- **Tactical combat on the grid.** 30 ft of movement (reachable squares are highlighted), melee needs adjacency, ranged attacks have normal and long range, cover from furniture (+2 AC), line of sight, opportunity attacks, Dash, Disengage, flanking-style pack tactics, area spells by distance. "Attack the zombie" walks you there first.
+- **Player freedom.** Attack anyone. Fists are a brawl (people get knocked out); a blade is murder. Rob, shoplift, threaten, pickpocket. The Breda militia, bounties, bans and grudges answer instead of the game saying no. Join the Pale Queen's cult if you want to. Ignore the main quest and work odd jobs, play cards, hunt wolves on the south road, or deal with the Thatch farm on the east road.
+
 ## What's new in v0.2
 
 - **Try anything.** Drink the mug Squib hands you, sit on a stool, climb the rafters, break a chair and swing the leg, light candles, play cards with the dwarves, forage, track, pray, pickpocket. Anything the story doesn't script gets a skill, a DC and a roll; the oracle decides whether the thing you reach for is actually there.

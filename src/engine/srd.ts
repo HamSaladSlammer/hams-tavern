@@ -166,6 +166,72 @@ export const MONSTERS: Record<string, MonsterDef> = {
     attacks: [{ name: 'Claw', toHit: 3, damage: '1d4+1', dtype: 'bludgeoning', verb: 'claws at' }], tags: ['undead'], xp: 10,
     immune: ['poison'], desc: 'A severed hand that scuttles on its fingertips.', aliases: ['hand', 'grasping hand', 'claw'],
   },
+  // ---- townsfolk: anyone can be fought ----
+  squib: {
+    id: 'squib', name: 'Squib', ac: 14, hp: '9d10+18', speed: 30, abilities: ab(19, 12, 16, 10, 14, 11),
+    attacks: [{ name: 'Fists like shovels', toHit: 6, damage: '2d6+4', dtype: 'bludgeoning', verb: 'hammers' }], tags: ['humanoid'], xp: 450,
+    desc: 'Seven feet of half-orc stretcher-bearer who has decided you are no longer a guest.', aliases: ['squib', 'barkeep', 'bartender', 'half-orc'],
+  },
+  road_dwarf: {
+    id: 'road_dwarf', name: 'Road Dwarf', plural: 'dwarves', ac: 13, hp: '3d8+6', speed: 25, abilities: ab(15, 10, 15, 10, 11, 10),
+    attacks: [{ name: 'Mug and fist', toHit: 4, damage: '1d6+2', dtype: 'bludgeoning', verb: 'wallops' }], tags: ['humanoid'], xp: 50, resist: ['poison'],
+    desc: 'Built like a keg and twice as dense.', aliases: ['dwarf', 'dwarves', 'borin', 'odo', 'marrik', 'tokk'], surrenderAt: 3,
+  },
+  window_scout: {
+    id: 'window_scout', name: 'Window-table scout', ac: 13, hp: '3d8', speed: 30, abilities: ab(10, 15, 10, 11, 13, 10),
+    attacks: [{ name: 'Knife', toHit: 4, damage: '1d4+2', dtype: 'piercing', verb: 'stabs at' }], tags: ['humanoid'], xp: 50,
+    desc: 'Old soldiers who sit facing the door for a reason.', aliases: ['elf', 'elves', 'goblin', 'goblins', 'faelar', 'ithren', 'nix', 'vetch', 'whisperers'], surrenderAt: 4,
+  },
+  sereza: {
+    id: 'sereza', name: 'Sereza Harrow', ac: 15, hp: '6d8+6', speed: 30, abilities: ab(10, 16, 12, 13, 12, 16),
+    attacks: [{ name: 'Hidden blade', toHit: 5, damage: '1d6+3', dtype: 'piercing', extra: { damage: '1d6', dtype: 'fire' }, verb: 'opens you up with a blade you never saw' }], tags: ['humanoid'], xp: 200, resist: ['fire'],
+    desc: 'She was always closer to the door than you.', aliases: ['sereza', 'harrow', 'tiefling', 'woman'], surrenderAt: 6,
+  },
+  garrick: {
+    id: 'garrick', name: 'Garrick', ac: 10, hp: '2d8', speed: 30, abilities: ab(10, 10, 10, 11, 10, 13),
+    attacks: [{ name: 'Ledger', toHit: 2, damage: '1d4', dtype: 'bludgeoning', verb: 'swats at' }], tags: ['humanoid'], xp: 10,
+    desc: 'A shopkeeper who has never been in a fight and is not enjoying his first.', aliases: ['garrick', 'shopkeeper', 'merchant'], surrenderAt: 6,
+  },
+  smith: {
+    id: 'smith', name: 'Mother Dreyse', ac: 14, hp: '7d8+14', speed: 30, abilities: ab(18, 10, 15, 10, 12, 10),
+    attacks: [{ name: 'Forge hammer', toHit: 5, damage: '1d8+4', dtype: 'bludgeoning', verb: 'swings her hammer at' }], tags: ['humanoid'], xp: 200, resist: ['fire'],
+    desc: 'Sixty years old and has been hitting things with hammers for fifty of them.', aliases: ['smith', 'dreyse', 'blacksmith', 'mother dreyse'], surrenderAt: 8,
+  },
+  hetch: {
+    id: 'hetch', name: 'Hetch', ac: 16, hp: '6d6+6', speed: 40, abilities: ab(6, 18, 12, 16, 14, 15),
+    attacks: [{ name: 'Storm of pins', toHit: 6, damage: '3d4', dtype: 'piercing', ranged: true, verb: 'flings a storm of pins at' }], tags: ['fey'], xp: 200,
+    desc: 'Every pin in the shop rises and turns toward you.', aliases: ['hetch', 'cat', 'tailor'], surrenderAt: 4,
+  },
+  doss: {
+    id: 'doss', name: 'Doss', ac: 10, hp: '2d8', speed: 25, abilities: ab(11, 9, 12, 10, 13, 10),
+    attacks: [{ name: 'Crook', toHit: 2, damage: '1d4', dtype: 'bludgeoning', verb: 'swings his crook at' }], tags: ['humanoid'], xp: 10,
+    desc: 'An old, deaf shepherd who doesn\'t understand why you\'re doing this.', aliases: ['doss', 'shepherd', 'old man'], surrenderAt: 4,
+  },
+  merla: {
+    id: 'merla', name: 'Merla Thatch', ac: 10, hp: '2d8', speed: 30, abilities: ab(12, 10, 11, 10, 12, 10),
+    attacks: [{ name: 'Pitchfork', toHit: 3, damage: '1d6+1', dtype: 'piercing', verb: 'jabs her pitchfork at' }], tags: ['humanoid'], xp: 10,
+    desc: 'A farmer defending the only thing she has left.', aliases: ['merla', 'farmer', 'woman', 'wife'], surrenderAt: 4,
+  },
+  aldwin: {
+    id: 'aldwin', name: 'Aldwin Thatch', ac: 8, hp: '3d8+6', speed: 20, abilities: ab(13, 6, 16, 3, 6, 5),
+    attacks: [{ name: 'Clumsy grab', toHit: 2, damage: '1d4', dtype: 'bludgeoning', verb: 'paws at' }], tags: ['undead'], xp: 100,
+    immune: ['poison'], desc: 'A farmer in his Sunday shirt. Dead a month. Still wearing his ring.', aliases: ['aldwin', 'husband', 'zombie', 'dead man', 'farmer'],
+  },
+  militia: {
+    id: 'militia', name: 'Militia', plural: 'militia', ac: 14, hp: '2d8+2', speed: 30, abilities: ab(13, 12, 12, 10, 11, 10),
+    attacks: [{ name: 'Spear', toHit: 3, damage: '1d6+1', dtype: 'piercing', verb: 'jabs a spear at' }], tags: ['humanoid'], xp: 25,
+    desc: 'Breda militia: a farmer with a spear and a borrowed helmet.', aliases: ['militia', 'guard', 'guards', 'watch', 'soldier'], surrenderAt: 3,
+  },
+  sergeant: {
+    id: 'sergeant', name: 'Sergeant Voss', ac: 16, hp: '5d8+10', speed: 30, abilities: ab(16, 12, 14, 10, 12, 12),
+    attacks: [{ name: 'Longsword', toHit: 5, damage: '1d8+3', dtype: 'slashing', verb: 'cuts at' }], tags: ['humanoid'], xp: 100,
+    desc: 'The militia sergeant. Veteran of Greymarch. Tired of this.', aliases: ['sergeant', 'voss', 'captain'], surrenderAt: 6,
+  },
+  wolf_pack: {
+    id: 'wolf_pack', name: 'Wolf', plural: 'wolves', ac: 12, hp: '2d8+2', speed: 40, abilities: ab(14, 15, 12, 3, 12, 6),
+    attacks: [{ name: 'Bite', toHit: 4, damage: '1d6+2', dtype: 'piercing', verb: 'bites' }], tags: ['beast'], xp: 50,
+    traits: ['pack tactics'], desc: 'Lean, grey, and hungry this spring.', aliases: ['wolf', 'wolves', 'dog'],
+  },
   alistair: {
     id: 'alistair', name: 'Alistair', ac: 13, hp: '5d8+5', speed: 30, abilities: ab(8, 12, 12, 16, 9, 15),
     attacks: [{ name: 'Chill Touch', toHit: 5, damage: '1d10', dtype: 'necrotic', verb: 'chill-touches' }], tags: ['undead'], xp: 0,

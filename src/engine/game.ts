@@ -15,6 +15,9 @@ import { classifySpeech } from '../nlp/profanity';
 import { askOracle, guessOdds } from './oracle';
 import * as Combat from './combat';
 import * as Act from './actions';
+import * as Freedom from '../content/freedom';
+Freedom.installFreedom();
+import { gridFor, freeNear, costs, pathTo, key as pkey, exitAt, visibleFrom, approachSquare, TILE_NAMES, type Pt } from './grid';
 
 export const SAVE_VERSION = 1;
 const START_MIN = 0; // May 1, 08:00
@@ -24,7 +27,7 @@ export function newState(seed = Date.now() >>> 0): GameState {
     version: SAVE_VERSION, rng: { state: seed }, phase: 'title', creation: { step: 'name' }, pc: null,
     loc: 'tavern', minutes: START_MIN, flags: {}, npc: {}, companions: [], companionHp: {}, combat: null,
     roomFoes: {}, roomItems: {}, talkingTo: null, lastTarget: null, chaos: 5, log: [], journal: [],
-    stats: { kills: 0, knockouts: 0, insults: 0 }, props: {}, lastObject: null,
+    stats: { kills: 0, knockouts: 0, insults: 0 }, props: {}, lastObject: null, pos: null, explored: {}, bounty: 0,
   };
 }
 
@@ -169,7 +172,7 @@ function room(s: GameState): Room { return ROOMS[s.loc]; }
 
 function presentNpcs(c: Ctx): string[] {
   const r = room(c.s);
-  const here = r.npcs ? r.npcs(c) : [];
+  const here = (r.npcs ? r.npcs(c) : []).filter((id) => !c.flag(`${id}_dead`));
   const comp = c.s.companions.filter((id) => !(id === 'alistair' && c.s.loc === 'tavern' && !c.flag('squib_ok_alistair')));
   return Array.from(new Set([...here, ...comp]));
 }
@@ -178,6 +181,7 @@ function describe(c: Ctx, full = true) {
   const r = room(c.s);
   c.out('title', r.name);
   if (full) c.narr(r.desc(c));
+  if (full && r.id === 'tavern' && c.flag('squib_dead')) c.narr('Nobody is behind the bar. The hearth has burned down to embers, and the barrel above it is just a barrel now. The regulars who are left drink in silence and don\'t look at you.');
   const npcs = (r.npcs ? r.npcs(c) : []).map((id) => NPCS[id]);
   if (npcs.length && full) c.sys('Here: ' + npcs.map((n) => `${n.name} (${n.short})`).join('; ') + '.');
   if (c.s.companions.length && full) c.sys('With you: ' + c.s.companions.map((id) => NPCS[id]?.name ?? id).join(', ') + '.');
@@ -188,12 +192,80 @@ function describe(c: Ctx, full = true) {
 function moveTo(c: Ctx, to: string, quiet = false) {
   const s = c.s;
   if (!ROOMS[to]) return;
+  const from = s.loc;
   c.set('prev_loc', s.loc);
   s.loc = to;
   s.talkingTo = null;
+  placeOnArrival(c, from);
   if (!quiet) describe(c, true);
   const r = ROOMS[to];
   r.onEnter?.(c);
+  if (!c.s.combat) Freedom.militiaCheck(c);
+}
+
+/** Stand at the door you came in by. */
+function placeOnArrival(c: Ctx, from: string) {
+  const g = gridFor(c.s.loc);
+  const r = ROOMS[c.s.loc];
+  const idx = r?.exits.findIndex((e) => e.to === from && !e.hidden?.(c)) ?? -1;
+  const door = idx >= 0 ? g.exits[idx]?.[0] : undefined;
+  const npcSpots = new Set(Object.values(g.npcSpots).map(pkey));
+  c.s.pos = door ? freeNear(g, door, npcSpots) : g.start;
+  if (door && c.s.pos.x === door.x && c.s.pos.y === door.y) c.s.pos = freeNear(g, { x: door.x + (door.x === 0 ? 1 : door.x === g.w - 1 ? -1 : 0), y: door.y + (door.y === 0 ? 1 : door.y === g.h - 1 ? -1 : 0) }, npcSpots);
+  reveal(c);
+}
+
+/** Fog of war: remember what you've seen. */
+export function reveal(c: Ctx) {
+  const g = gridFor(c.s.loc);
+  const p = c.s.pos ?? g.start;
+  const seen = visibleNow(c.s, p);
+  const prev = c.s.explored[c.s.loc] ?? '0'.repeat(g.w * g.h);
+  const arr = prev.split('');
+  for (const k of seen) { const [x, y] = k.split(',').map(Number); arr[y * g.w + x] = '1'; }
+  c.s.explored[c.s.loc] = arr.join('');
+}
+
+export function lightRadius(s: GameState): number {
+  const g = gridFor(s.loc);
+  if (!g.dark) return 99;
+  const pc = s.pc;
+  if (!pc) return 2;
+  const lit = s.flags.light_on || pc.cantrips.includes('light') || pc.inventory.some((x) => x.id === 'torch' || x.id === 'lantern' || x.id === 'lamp');
+  const dv = speciesOf(pc).darkvision ?? 0;
+  return Math.max(lit ? 6 : 1, Math.floor(dv / 5));
+}
+
+export function visibleNow(s: GameState, p?: Pt): Set<string> {
+  const g = gridFor(s.combat?.loc ?? s.loc);
+  const me = s.combat?.units.find((u) => u.isPc);
+  const at = p ?? (me ? { x: me.x, y: me.y } : s.pos ?? g.start);
+  const set = visibleFrom(g, at, lightRadius(s));
+  if (s.combat) for (const u of s.combat.units) if (u.side === 'party' && !u.isPc) for (const k of visibleFrom(g, { x: u.x, y: u.y }, lightRadius(s))) set.add(k);
+  return set;
+}
+
+/** Walk around a room outside combat (no time passes). Stepping on a door takes it. */
+function explore(c: Ctx, dest: Pt | null, label?: string) {
+  const g = gridFor(c.s.loc);
+  const from = c.s.pos ?? g.start;
+  if (!dest) return;
+  const npcSpots = new Set(Object.entries(g.npcSpots).filter(([id]) => presentNpcs(c).includes(id)).map(([, p]) => pkey(p)));
+  const map = costs(g, from, npcSpots, 200);
+  if (!map.has(pkey(dest))) {
+    const near = approachSquare(g, from, dest, 1, npcSpots);
+    if (!near) { c.sys('You can\'t get there from here.'); return; }
+    dest = near.dest;
+  }
+  c.s.pos = dest;
+  reveal(c);
+  const ex = exitAt(g, dest);
+  if (ex !== null) {
+    const e = ROOMS[c.s.loc].exits[ex];
+    if (e && !e.hidden?.(c)) { c.s.pos = from; go(c, e.names[0]); return; }
+  }
+  if (label) c.narr(`You walk over to ${label}.`);
+  void pathTo;
 }
 
 function findExit(c: Ctx, dest: string) {
@@ -218,13 +290,13 @@ function go(c: Ctx, dest: string) {
   }
   const msg = ex.blocked?.(c);
   if (msg) { c.narr(msg); return; }
-  if (ex.to === 'thornwood' && c.s.loc === 'breda_square' && !c.flag('quest_chapel')) c.sys('(Tip: the notice board and Squib can tell you what\'s up north.)');
+  if (ex.to === 'thornwood' && c.s.loc === 'breda_square' && !c.flag('quest_chapel') && !c.flag('tip_north')) { c.set('tip_north'); c.sys('(Tip: the notice board and Squib can tell you what\'s up north, if you care. Nobody\'s making you.)'); }
   c.advance(ex.minutes);
   if (ex.minutes >= 60) c.narr(travelLine(c, ex.minutes));
   moveTo(c, ex.to);
   if (ex.travel && !c.s.combat) {
     const t = TRAVEL[ex.travel];
-    if (t && c.rng && (die(c.rng, 100) / 100) <= t.chance) { const e = pick(c.rng, t.entries); c.out('title', 'On the road'); e(c); }
+    if (t && c.rng && (die(c.rng, 100) / 100) <= t.chance) { const e = pick(c.rng, t.entries); c.out('title', 'On the road'); c.set('road_map', ex.travel === 'thornwood' ? 'thornwood' : ''); e(c); c.set('road_map', ''); }
   }
 }
 
@@ -350,6 +422,7 @@ function shop(c: Ctx) {
   const r = room(c.s);
   const np = r.shop ? NPCS[r.shop] : null;
   if (!np?.shop) { c.sys('There\'s nothing for sale here.'); return; }
+  if (c.flag(`${np.id}_dead`)) { c.narr(`Nobody is minding the shop any more. You could just take what you want: ${np.shop.map((x) => ITEMS[x.id]?.name ?? MENU[x.id]?.name ?? x.id).join(', ')}.`); return; }
   if (c.npc(np.id).banned) { c.narr(`${np.name} won't serve you.`); return; }
   const disc = discount(c, np.id);
   c.out('title', `${np.name} — for sale`);
@@ -373,6 +446,7 @@ function discount(c: Ctx, npcId: string) {
 function buy(c: Ctx, name: string, qty: number) {
   const r = room(c.s);
   const np = r.shop ? NPCS[r.shop] : null;
+  if (np && c.flag(`${np.id}_dead`)) { if (!Freedom.shoplift(c, name)) { if (np.id === 'squib' && /ale|beer|drink|pint|mug/.test(name)) { c.give('mug_ale'); c.s.lastObject = 'mug'; c.narr('You go behind the bar and pull your own pint. It\'s very quiet.'); } else c.sys(`There's no "${name}" here.`); } return; }
   if (!np?.shop) { c.sys('Nobody here is selling.'); return; }
   if (c.npc(np.id).banned) { c.narr(`${np.name} won't serve you.`); return; }
   const n = name.toLowerCase();
@@ -433,6 +507,7 @@ function sell(c: Ctx, name: string) {
 // ---------- items ----------
 function take(c: Ctx, name: string) {
   const r = room(c.s);
+  if (r.shop && /^(steal|shoplift|pocket|swipe|pinch|nick|lift|pilfer|nab|snag|filch|palm)\b/i.test(RAW.trim()) && Freedom.shoplift(c, name)) return;
   if (name === 'all' || /^(everything|all|loot)$/.test(name)) {
     const items = c.s.roomItems[c.s.loc] ?? [];
     if (!items.length) { const f = (r.features ?? []).find((x) => x.take && !x.hidden?.(c)); if (f) { f.take!(c); return; } c.sys('There\'s nothing here to take.'); return; }
@@ -627,7 +702,9 @@ function rest(c: Ctx, kind: 'short' | 'long') {
   if (c.s.combat) { c.sys('Not in the middle of a fight.'); return; }
   const r = room(c.s);
   if (kind === 'long') {
-    if (r.id === 'tavern') {
+    if (r.id === 'tavern' && c.flag('squib_dead')) {
+      c.narr('You sleep by the dead hearth. Nobody stops you. Nobody stays in the room with you, either.');
+    } else if (r.id === 'tavern') {
       if (c.npc('squib').banned) { c.narr('Squib won\'t rent to you.'); return; }
       if (!c.flag('room_paid') && !c.flag('chapel_paid')) {
         if (!c.pay(5)) { c.bad('You can\'t afford even the floor by the hearth (5 cp).'); return; }
@@ -639,7 +716,8 @@ function rest(c: Ctx, kind: 'short' | 'long') {
       c.narr('You make camp off the road.');
       if (r.region !== 'Breda' && die(c.rng, 6) === 1) { c.out('title', 'In the night'); c.narr('Something moves at the edge of the firelight.'); c.fight('wolf_single'); return; }
     }
-    if (r.id === 'tavern' && c.flag('chapel_paid') && !c.flag('act1_finale')) finale(c);
+    if (r.id === 'tavern' && (c.flag('chapel_paid') || (c.flag('chapel_done') && c.flag('squib_dead'))) && !c.flag('act1_finale')) finale(c);
+    if (c.flag('cult_joined') && !c.flag('act1_finale') && !c.flag('bell_silenced')) Freedom.cultFinale(c);
     // sleep until 07:00 the next morning (or 8 hours, if it's already morning)
     const nowMin = (c.s.minutes + 480) % 1440;
     let until = (7 * 60 - nowMin + 1440) % 1440;
@@ -683,7 +761,7 @@ function finale(c: Ctx) {
   }
   c.out('title', 'End of Act One');
   c.narr('Somewhere to the west, beneath the white spires of the capital, something that should be sleeping turns over, and remembers a little more.');
-  c.sys('Thank you for playing Hams Tavern v0.1. The bells at Coltale, Largo and Borschardt are still ringing, and that\'s the next version. You can keep exploring Breda and the foothills.');
+  c.sys('Thank you for playing Hams Tavern v0.3. The bells at Coltale, Largo and Borschardt are still ringing, and that\'s the next version. You can keep exploring Breda and the foothills.');
   c.journal('Act One complete. The bell was a signal, not a lock. Something waits in "the old vaults," down the west road.');
 }
 
@@ -816,6 +894,8 @@ function withPronoun(c: Ctx, it: Intent): Intent {
 
 function dispatch(c: Ctx, it: Intent, raw: string) {
   const s = c.s;
+  if (Freedom.militiaRespond(c, raw)) return;
+  c.set('subdue_intent', /\b(knock (him|her|them|it)? ?out|knock out|subdue|non-?lethal|don'?t kill|spare (his|her|their) li(fe|ves)|pull (my|your) punches)\b/i.test(raw));
   const cb = s.combat;
   // turn control
   if (cb && /^(end turn|end|done|pass|next|end my turn|wait)$/i.test(raw.trim())) { Combat.endPlayerTurn(c); return; }
@@ -828,7 +908,26 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
     case 'exits': listExits(c); return;
     case 'save': c.sys('Your game saves automatically after every move.'); return;
     case 'oracle': { const a = askOracle(c.rng, guessOdds(it.question), s.chaos); c.out('roll', `🔮 Oracle (${a.chance}%): ${a.answer}.${a.event ? ' Random event — ' + a.event : ''}`); return; }
-    case 'go': if (cb) { if (/away|back|out/.test(it.dest)) { Combat.playerFlee(c); return; } c.sys('You\'re in a fight. Try "flee".'); return; } go(c, it.dest); return;
+    case 'go': if (cb) { combatGo(c, it.dest); return; } go(c, it.dest); return;
+    case 'move': {
+      if (cb) {
+        if (it.toward && !Combat.resolveTarget(c, it.toward) && !Combat.resolveTarget(c, it.toward, 'party')) { combatGo(c, it.toward); return; }
+        Combat.playerMove(c, it); return;
+      }
+      if (it.dash || it.cover) { c.narr(it.cover ? 'You find a spot with your back to the wall and a clear view of the door. Old habits.' : 'You break into a run, then feel silly, then stop.'); return; }
+      if (it.x !== undefined && it.y !== undefined) { explore(c, { x: it.x, y: it.y }); return; }
+      if (it.toward) {
+        const ex = findExit(c, it.toward); if (ex && !matchNpc(c, it.toward) && !Act.findProp(c, it.toward, false)) { go(c, it.toward); return; }
+        const g = gridFor(c.s.loc);
+        const np = matchNpc(c, it.toward);
+        if (np && g.npcSpots[np.id]) { explore(c, g.npcSpots[np.id], np.name); c.s.talkingTo = np.id; return; }
+        const t = tileOf(c, it.toward);
+        if (t) { explore(c, t, `the ${it.toward}`); c.s.lastObject = it.toward; return; }
+        if (Act.findProp(c, it.toward, true)) { c.narr(`You walk over to the ${it.toward}.`); c.s.lastObject = it.toward; return; }
+        c.narr(`There's no ${it.toward} here.`); return;
+      }
+      c.narr('You wander a few steps and look around.'); return;
+    }
     case 'sneak': c.check('stealth', 10); if (it.dest) go(c, it.dest); return;
     case 'attack': return attack(c, it);
     case 'cast': Combat.playerCast(c, it.spell, it.target); return;
@@ -897,6 +996,35 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
   }
 }
 
+/** Find the map square for a named thing (table, bar, well...). */
+function tileOf(c: Ctx, name: string): Pt | null {
+  const g = gridFor(c.s.loc);
+  const n = name.toLowerCase();
+  const props = g.def.props ?? {};
+  const from = c.s.pos ?? g.start;
+  let best: Pt | null = null;
+  for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+    const ch = g.tiles[y][x];
+    const pid = props[ch];
+    const pdef = pid ? (Act.propDef(c.s.loc, pid)) : null;
+    const names = [...(pdef?.names ?? []), (TILE_NAMES as Record<string, string>)[ch] ?? ''].filter(Boolean);
+    if (names.some((x2) => x2 === n || n.includes(x2) || x2.includes(n))) { const p = { x, y }; if (!best || Math.max(Math.abs(p.x - from.x), Math.abs(p.y - from.y)) < Math.max(Math.abs(best.x - from.x), Math.abs(best.y - from.y))) best = p; }
+  }
+  return best;
+}
+
+/** "go north" / "go to the door" mid-fight. */
+function combatGo(c: Ctx, dest: string) {
+  const d = dest.toLowerCase();
+  if (/^(north|south|east|west|left|right|up|down|back|forward)$/.test(d) && !findExit(c, d)) { Combat.playerMove(c, { dir: d }); return; }
+  if (Combat.resolveTarget(c, d)) { Combat.playerMove(c, { toward: d }); return; }
+  const ex = findExit(c, d);
+  if (ex || /away|out|exit|door/.test(d)) { Combat.playerFlee(c); return; }
+  const t = tileOf(c, d);
+  if (t) { Combat.playerMove(c, { x: t.x, y: t.y }); return; }
+  c.sys(`You can't move to "${dest}" in this fight. ("approach the zombie", "take cover", "move north 2", or "flee")`);
+}
+
 /** Grab something mid-fight: a bottle, a chair leg, a rock. Costs your bonus action. */
 function combatGrab(c: Ctx, name: string) {
   const cb = c.s.combat!;
@@ -954,6 +1082,7 @@ function attack(c: Ctx, it: Extract<Intent, { type: 'attack' }>) {
 function outsideViolence(c: Ctx, target?: string) {
   const np = target ? matchNpc(c, target) : null;
   if (np?.onAttack) { np.onAttack(c); return; }
+  if (np && Freedom.attackNpc(c, np, RAW)) return;
   if (np) {
     if (c.s.loc === 'tavern') { c.say('squib', 'A hand the size of a shovel closes gently on your wrist. "No weapons drawn under this roof." He lets go. The rule was not a suggestion.'); c.npc('squib').disposition -= 1; return; }
     if (np.id === 'hetch') { c.narr('The cat looks at you. Every pin in the shop rises an inch off the table. You decide against it.'); return; }
@@ -993,6 +1122,7 @@ function social(c: Ctx, skill: 'persuasion' | 'intimidation' | 'deception' | 'pe
   if (skill === 'performance' && Act.freeAction(c, W, RAW)) return;
   if (skill === 'performance' && !np) { const ok = c.check('performance', 12); c.narr(ok ? 'People stop to watch. A few clap. Someone throws a copper.' : 'Nobody stops to watch. A dog leaves.'); if (ok) c.money(1); return; }
   if (!np) { c.sys('Who are you trying to ' + (skill === 'persuasion' ? 'persuade' : skill === 'intimidation' ? 'intimidate' : 'fool') + '?'); return; }
+  if (skill === 'intimidation' && /\b(money|coin|coins|till|purse|gold|cash|everything|hand (it )?over|valuables|wallet|pay up|give me)\b/.test(`${RAW} ${text}`.toLowerCase()) && Freedom.robbery(c, np)) return;
   if (np.social && np.social(c, skill, text)) return;
   if (np.id === 'merah' && skill === 'persuasion') { answerTopic(c, np, 'stop'); return; }
   const ok = c.check(skill, 12);
@@ -1043,6 +1173,8 @@ function unknown(c: Ctx, raw: string) {
   const sp = classifySpeech(raw);
   const question = /\?$/.test(raw.trim()) || /^(what|why|who|where|how|when|is|are|do|does|can|will|would|tell me|have you|did you|could you|should)\b/.test(low);
   if (sp.present || question) { say(c, raw); return; }
+  if (/^(work|get a job|find work|do (some )?odd jobs|earn (some )?(money|coin)|help out|ask for work|look for work|wash (the )?mugs|chop wood|herd (the )?sheep|work the bellows|stock (the )?shelves|do chores|labou?r)\b/.test(low)) { Freedom.work(c); return; }
+  if (/^(hunt|go hunting|hunt wolves|hunt for wolves|look for wolves|track the wolves|find the pack)\b/.test(low) && c.s.loc === 'south_road') { Freedom.huntWolves(c); return; }
   // talking to someone and it sounds like one of their topics: it's speech
   if (c.s.talkingTo && presentNpcs(c).includes(c.s.talkingTo) && topicHit(c, NPCS[c.s.talkingTo], raw) && !Act.looksLikeAction(raw)) { say(c, raw); return; }
   // an action: try anything
@@ -1082,8 +1214,12 @@ export function suggestions(s: GameState): string[] {
         const main = weaponById(pc.equipped.main);
         if (pc.cls === 'wizard') out.push(`cast fire bolt at ${n}`);
         if (pc.cls === 'cleric' && pc.slots.used < pc.slots.max && foes.length >= 1 && cb.round === 1) out.push(`cast bless`);
-        out.push(main ? `attack ${n}` : `punch ${n}`);
-        if (main && pc.cls !== 'monk') out.push(`punch ${n}`); else out.push(`kick ${n}`);
+        const brawl = !!Combat.encounterOf(cb.encounterId)?.nonlethal;
+        if (brawl) out.push(`punch ${n}`, `kick ${n}`, `shove ${n}`);
+        else {
+          out.push(main ? `attack ${n}` : `punch ${n}`);
+          if (main && pc.cls !== 'monk') out.push(`punch ${n}`); else out.push(`kick ${n}`);
+        }
         const r = weaponById(pc.equipped.ranged);
         if (r) out.push(r.category === 'firearm' ? ((pc.ammo[r.id] ?? 0) > 0 && !s.flags[`jam_${r.id}`] ? `shoot ${n}` : s.flags[`jam_${r.id}`] ? 'unjam' : 'reload') : `shoot ${n}`);
         for (const sp of pc.cantrips.filter((x) => ['attack', 'save'].includes(SPELLS[x].kind))) out.push(`cast ${SPELLS[sp].name.toLowerCase()} at ${n}`);
@@ -1159,5 +1295,74 @@ export function migrate(raw: unknown): GameState | null {
     if (!(pc.feat in FEATS)) { const map: Record<string, string> = {}; pc.feat = map[pc.feat] ?? 'savage'; }
   }
   if (out.phase === 'create' && !out.pc) out.phase = 'title';
+  out.pos ??= null; out.explored ??= {}; out.bounty ??= 0;
+  if (out.combat) { for (const u of out.combat.units) { u.x ??= 1; u.y ??= 1; } out.combat.moveLeft ??= 30; out.combat.loc ??= out.loc; }
   return out;
+}
+
+// ---------- the map, for the UI ----------
+export interface MapToken { key: string; x: number; y: number; name: string; label: string; side: 'pc' | 'party' | 'foe' | 'npc'; hp?: number; maxHp?: number; down?: boolean; conds: string[]; cmd: string }
+export interface MapView {
+  loc: string; w: number; h: number; tiles: string[]; tileNames: Record<string, string>;
+  tokens: MapToken[]; visible: Set<string>; explored: string; reach: Set<string> | null;
+  exits: { x: number; y: number; label: string; state: 'open' | 'locked' | 'hidden' }[];
+  inCombat: boolean; moveLeft: number; dark: boolean; outdoors: boolean;
+}
+
+export function mapView(s: GameState): MapView | null {
+  if (s.phase !== 'play' || !s.pc) return null;
+  const lines: LogLine[] = [];
+  const c = makeCtx({ ...s, log: [] } as GameState, lines);
+  const loc = s.combat?.loc ?? s.loc;
+  const g = gridFor(loc);
+  const r = ROOMS[loc];
+  const tokens: MapToken[] = [];
+  const initials = (n: string) => n.replace(/^the\s+/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  if (s.combat) {
+    for (const u of s.combat.units) {
+      if (u.conditions.includes('fled')) continue;
+      const def = u.monster ? MONSTERS[u.monster] : null;
+      const num = u.name.match(/\d+$/)?.[0];
+      tokens.push({ key: u.key, x: u.x, y: u.y, name: u.name, label: u.isPc ? initials(s.pc.name) : num ? `${(def?.name ?? u.name)[0]}${num}` : initials(u.name), side: u.isPc ? 'pc' : u.side === 'party' ? 'party' : 'foe',
+        hp: u.side === 'party' ? u.hp : undefined, maxHp: u.side === 'party' ? u.maxHp : undefined, down: u.conditions.some((x) => ['dead', 'unconscious', 'surrendered'].includes(x)), conds: u.conditions.filter((x) => !['acted'].includes(x)),
+        cmd: u.side === 'foe' ? `attack ${u.name.toLowerCase()}` : u.isPc ? 'look' : `look at ${u.name.toLowerCase()}` });
+      if (u.side === 'foe') { const t = tokens[tokens.length - 1]; const f = u.hp / u.maxHp; t.hp = Math.max(0, Math.round(f * 100)); t.maxHp = 100; }
+    }
+    for (const id of (r?.npcs?.(c) ?? []).filter((x) => !s.flags[`${x}_dead`])) { const p = g.npcSpots[id]; if (p && !s.combat.units.some((u) => u.x === p.x && u.y === p.y)) tokens.push({ key: id, x: p.x, y: p.y, name: NPCS[id]?.name ?? id, label: initials(NPCS[id]?.name ?? id), side: 'npc', conds: [], cmd: `look at ${NPCS[id]?.names[0] ?? id}` }); }
+  } else {
+    const me = s.pos ?? g.start;
+    tokens.push({ key: 'pc', x: me.x, y: me.y, name: s.pc.name, label: initials(s.pc.name), side: 'pc', hp: s.pc.hp, maxHp: s.pc.maxHp, conds: [], cmd: 'look' });
+    const taken = new Set<string>([pkey(me)]);
+    for (const id of presentNpcs(c)) {
+      const spot = g.npcSpots[id];
+      const isComp = s.companions.includes(id);
+      const base = spot && !isComp ? spot : { x: me.x + 1, y: me.y };
+      const p = freeNear(g, base, taken);
+      taken.add(pkey(p));
+      tokens.push({ key: id, x: p.x, y: p.y, name: NPCS[id]?.name ?? id, label: initials(NPCS[id]?.name ?? id), side: isComp ? 'party' : 'npc', hp: isComp ? s.companionHp[id] : undefined, maxHp: isComp ? Combat.COMPANIONS[id]?.maxHp : undefined, conds: [], cmd: `talk to ${NPCS[id]?.names[0] ?? id}` });
+    }
+    for (const id of s.companions.filter((x) => !presentNpcs(c).includes(x))) void id;
+  }
+  const exits: MapView['exits'] = [];
+  r?.exits.forEach((e, i) => {
+    for (const p of g.exits[i] ?? []) exits.push({ x: p.x, y: p.y, label: e.label, state: e.hidden?.(c) ? 'hidden' : e.blocked && (e.to === loc || e.blocked(c)) ? 'locked' : 'open' });
+  });
+  let reach: Set<string> | null = null;
+  if (s.combat) {
+    const me = s.combat.units.find((u) => u.isPc)!;
+    const cur = s.combat.order[s.combat.turn] === 'pc';
+    if (cur && !me.conditions.includes('unconscious')) {
+      const occ = new Set<string>();
+      for (const u of s.combat.units) if (u !== me && !u.conditions.some((x) => ['dead', 'fled'].includes(x))) occ.add(pkey({ x: u.x, y: u.y }));
+      for (const b of s.combat.blockers ?? []) occ.add(pkey(b));
+      const m = costs(g, { x: me.x, y: me.y }, occ);
+      reach = new Set([...m.entries()].filter(([, v]) => v.c > 0 && v.c * 5 <= s.combat!.moveLeft).map(([k]) => k));
+    }
+  }
+  const names: Record<string, string> = { ...TILE_NAMES };
+  for (const [ch, pid] of Object.entries(g.def.props ?? {})) { const d = Act.propDef(loc, pid); if (d) names[ch] = d.names[0]; }
+  return {
+    loc, w: g.w, h: g.h, tiles: g.tiles, tileNames: names, tokens, visible: visibleNow(s), explored: s.explored[loc] ?? '', reach, exits,
+    inCombat: !!s.combat, moveLeft: s.combat?.moveLeft ?? 0, dark: g.dark, outdoors: !!r?.outdoors,
+  };
 }

@@ -720,3 +720,5 @@ export function splitCommands(raw: string): string[] {
   const parts = raw.split(new RegExp(`\\s*(?:;|,?\\s+and then\\s+|,?\\s+then\\s+|,\\s*(?=${VERB}\\b)|\\s+and\\s+(?=${VERB}\\b))\\s*`, 'i')).map((x) => x.trim()).filter(Boolean);
   return parts.length ? parts.slice(0, 5) : [raw];
 }
+
+export function propDef(loc: string, id: string): PropDef | undefined { return (ROOM_PROPS[loc] ?? []).find((p) => p.id === id); }
