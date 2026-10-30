@@ -465,6 +465,7 @@ export function pastime(c: Ctx, w: World, raw: string): boolean {
   const t = raw.toLowerCase().trim().replace(/[.!]+$/, '').replace(/^(i |let me |i want to |i try to |i'll )/, '').replace(/^(sit (down )?(by|at|near|in) (the )?\w+ and |sit and )/, '');
   const main = weaponById(c.pc.equipped.main);
   const m = t.match(/^(sharpen|hone|whet|oil|clean|polish|maintain|mend|repair|fix|patch|darn|stitch|whittle|carve|write|sketch|draw|read|count|tally|check|inspect|organi[sz]e|pack|repack|braid|shave|wash|meditate|journal|practi[cs]e|train|exercise|stretch|cook|brew|fletch|tune)\b\s*(.*)$/);
+  if (m && !m[2] && /^(journal|pack|read|check|count|inspect)$/.test(m[1])) return false;
   if (!m) return false;
   const [, verb, rest0] = m;
   const rest = rest0.replace(/^(my|the|a|an|some)\s+/, '');

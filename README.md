@@ -9,6 +9,16 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.6: the lore brain
+
+- **People know the world.** Ask anyone about any place, person, faction, god, vice or bit of history in Lahti and they answer from a library of 520+ written facts drawn from the setting: towns, landmarks, the war, the treaty, the bells, the cult, the old faith and more.
+- **Who knows what.** An innkeeper in Coltale knows Coltale. A sailor has heard the river rumours. A crown agent knows things she'll only say quietly. Some things are secrets, and story spoilers stay locked until you've earned them.
+- **Directions.** "Where is Greymarch Field?" gets a compass direction and rough days on the road, and pins the place on your World map.
+- **Follow-ups.** "What else?", "tell me more", "where is it?" and "what is she like?" carry on with the same subject. Nobody repeats themselves.
+- **Your own memory.** "What do I know about the war?" lists what you've heard and rolls History, Religion, Arcana or Nature to dredge up more.
+- **Journal.** A new "What you've learned" section collects everything people have told you.
+- **Report card.** `npm run eval` scores the game master on 300 typical player lines. Before v0.6, 21% of answers were on topic and 30% were generic. Now 97% are on topic and 7% are generic.
+
 ## What's new in v0.5
 
 - **Pick your story.** Six campaigns in the same open world:
@@ -101,6 +111,7 @@ npm run build    # production build in dist/
 | `src/engine/` | Rules: dice, characters, combat, oracle, and the game master (`game.ts`). Pure TypeScript with no DOM code. |
 | `src/nlp/` | Intent parser, verb lexicon, profanity speech-act classifier, and narration grammar |
 | `src/content/` | The world: rooms, NPCs, encounters and travel tables for Act One |
+| `src/lore/` | The lore brain: entities, facts, who knows what, and how people answer |
 | `src/ui/` | Phone-first interface and the save layer |
 | `tests/` | Unit tests, plus headless playthroughs that finish Act One with 8 different characters |
 

@@ -241,6 +241,7 @@ export interface GameState {
   chaos: number;
   log: LogLine[];
   journal: string[];
+  loreKnown?: string[]; // ids of lore facts the player has heard
   stats: { kills: number; knockouts: number; insults: number };
   props: Record<string, PropState[]>; // props the oracle added, or that changed (broken, taken)
   lastObject: string | null;

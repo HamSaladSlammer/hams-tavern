@@ -20,6 +20,9 @@ import * as Freedom from '../content/freedom';
 import * as World from '../world';
 import * as DM from './dm';
 import * as Campaigns from '../world/campaigns';
+import * as Lore from '../lore';
+import { townOfRoom } from '../world/towns';
+import { next as rnd } from './dice';
 import type { CampaignSpec } from './types';
 Freedom.installFreedom();
 import { gridFor, freeNear, costs, pathTo, key as pkey, exitAt, visibleFrom, approachSquare, TILE_NAMES, type Pt } from './grid';
@@ -376,18 +379,66 @@ function listTopics(c: Ctx, np: Npc) {
 function answerTopic(c: Ctx, np: Npc, text: string): boolean {
   const t = text.toLowerCase();
   if (np.id === 'squib' && c.npc('squib').banned) { c.narr('Squib doesn\'t answer.'); return true; }
-  let best: { score: number; topic: typeof np.topics[number] } | null = null;
+  let best: { score: number; key: string; topic: typeof np.topics[number] } | null = null;
   for (const tp of np.topics) {
     if (tp.when && !tp.when(c)) continue;
     for (const k of tp.keys) {
       const re = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-      if (re.test(t)) { const sc = k.length; if (!best || sc > best.score) best = { score: sc, topic: tp }; }
+      if (re.test(t)) { const sc = k.length; if (!best || sc > best.score) best = { score: sc, key: k.toLowerCase(), topic: tp }; }
     }
   }
-  if (best) { best.topic.say(c); c.npc(np.id).topicsSeen.push(best.topic.id); return true; }
+  // The lore brain answers when you name something more specifically than any scripted line does.
+  const lt = Lore.topicOf(text, (c.flag('lore_focus') as string) || null);
+  const handWritten = !/_keeper$|_merchant$|_watch$|^x:|^hire_/.test(np.id);
+  const loreFirst = !!lt && lt.ask !== 'opinion' && (!best || GENERIC_KEYS.has(best.key) || (!!lt.alias && lt.alias.length > best.key.length && !(handWritten && new RegExp(`\\b${best.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lt.alias))));
+  if (loreFirst && loreAnswer(c, np, lt!, text)) return true;
+  if (best) { best.topic.say(c); c.npc(np.id).topicsSeen.push(best.topic.id); if (lt) c.set('lore_focus', lt.id); return true; }
+  if (lt && lt.ask === 'opinion') { DM.smalltalk(c, W, np, text); c.set('lore_focus', lt.id); return false; }
   // Nothing scripted: answer like a person would.
   DM.smalltalk(c, W, np, text);
   return false;
+}
+
+const GENERIC_KEYS = new Set(['about', 'town', 'city', 'village', 'here', 'this place', 'news', 'rumor', 'rumour', 'rumors', 'rumours', 'gossip', 'heard', 'going on', 'trouble', 'work', 'jobs', 'job', 'who', 'why', 'story', 'stories', 'dead', 'queen', 'help', 'friend', 'company', 'stranger', 'woman', 'corner', 'quest', 'advice']);
+
+/** Remember a fact the player has now heard. */
+function learn(c: Ctx, id: string) { const k = (c.s.loreKnown ??= []); if (!k.includes(id)) k.push(id); }
+function loreCtx(c: Ctx, np: Npc): Lore.LoreCtx {
+  const mem = c.npc(np.id);
+  const k = Lore.knowerFor(np.id, townOfRoom);
+  const pr = k?.entity ? Lore.ENTITY[k.entity]?.pronoun : undefined;
+  return { npcId: np.id, npcName: np.name, pronoun: pr === 'she' ? 'she' : pr === 'he' || !pr ? (np.id.startsWith('x:') ? 'they' : 'he') : 'they', here: townOfRoom(c.s.loc) ?? c.s.world?.at ?? null, flag: (n) => c.flag(n), told: (id) => mem.topicsSeen.includes(`f:${id}`), rand: () => rnd(c.rng), disposition: mem.disposition };
+}
+function loreAnswer(c: Ctx, np: Npc, lt: { id: string; ask: Lore.Ask }, text: string): boolean {
+  const ans = Lore.answer(loreCtx(c, np), { id: lt.id, ask: lt.ask, question: text });
+  if (!ans) return false;
+  for (const l of ans.lines) (l.k === 'say' ? c.say(np.id, l.t) : c.narr(l.t));
+  const mem = c.npc(np.id);
+  for (const id of ans.told) { mem.topicsSeen.push(`f:${id}`); learn(c, id); }
+  for (const r of ans.reveal) World.discover(c, r, `${np.name} told you`);
+  c.set('lore_focus', lt.id);
+  return true;
+}
+
+/** "what do I know about X" / "recall X": your own memory, tested. */
+function recall(c: Ctx, raw: string): boolean {
+  const m = raw.match(/^(?:what do i (?:know|remember) about|recall|remember|think back (?:on|to)|what have i (?:heard|learned|learnt) about|do i know anything about)\s+(.+?)\??$/i);
+  if (!m) return false;
+  const found = Lore.findEntities(m[1]);
+  if (!found.length) { c.narr(`You search your memory for ${m[1]}. Nothing comes.`); return true; }
+  const id = found[0].id, ent = Lore.ENTITY[id];
+  const home = c.flag('local') ? 'breda' : null;
+  const { remembered, fresh } = Lore.recallable(id, c.s.loreKnown ?? [], (n) => c.flag(n), home);
+  c.out('title', `What you know: ${ent.name}`);
+  for (const f of remembered.slice(-4)) c.narr(`• ${f.text}`);
+  const key = `recalled_${id}_${c.pc.level}`;
+  if (fresh.length && !c.flag(key)) {
+    c.set(key);
+    const f = fresh[0];
+    if (c.check(Lore.recallSkill(id), Lore.recallDc(f))) { c.narr(`Something surfaces: ${f.text}`); learn(c, f.id); if (f.reveals) World.discover(c, f.reveals, 'you remembered'); }
+    else c.narr(remembered.length ? 'That\'s all that comes to mind.' : `The name rings a faint bell, no more. Somebody who lives near ${ent.name} would know.`);
+  } else if (!remembered.length) c.narr(fresh.length ? 'You\'ve already racked your brains on this. Ask around.' : 'You know nothing about it yet. Ask around.');
+  return true;
 }
 
 function topicHit(c: Ctx, np: Npc | undefined, text: string): boolean {
@@ -850,6 +901,13 @@ function journal(c: Ctx) {
   c.out('title', 'Journal');
   if (!c.s.journal.length) c.narr('Nothing yet. The notice board in Breda\'s square is a good start.');
   for (const j of c.s.journal) c.narr('• ' + j);
+  const learned = (c.s.loreKnown ?? []).map((id) => Lore.FACT[id]).filter(Boolean);
+  if (learned.length) {
+    c.out('title', 'What you\'ve learned');
+    const by: Record<string, string[]> = {};
+    for (const f of learned) (by[f.about[0]] ??= []).push(f.text);
+    for (const [id, list] of Object.entries(by)) c.narr(`${Lore.ENTITY[id]?.name ?? id}: ${list.join(' ')}`);
+  }
 }
 
 // ---------- character creation ----------
@@ -974,6 +1032,7 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
       }
     }
   }
+  if (!s.combat && recall(c, raw)) return;
   if (!s.combat && (DM.thought(c, W, raw) || DM.lookAround(c, W, raw) || DM.announce(c, W, raw) || DM.pastime(c, W, raw))) return;
   { const m = raw.match(/^(?:choose|become|follow|swear|take up|i choose)\s+(?:the\s+|a\s+|an\s+|to\s+)?(?:path of |college of |domain of |circle of |oath of |way of |school of )?(.+?)\s*(?:subclass)?$/i);
     if (m && c.pc.level >= 3 && !c.pc.subclass) { const r = chooseSubclass(c.pc, m[1]); if (typeof r !== 'string') { for (const l of r) c.good(l); return; } if (/^choose/i.test(raw)) { c.sys(r); return; } } }

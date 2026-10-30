@@ -324,7 +324,7 @@ export function parse(rawInput: string, spellNames: string[] = []): Intent {
 
   // --- movement ---
   if ((m = t.match(/^(?:sneak|creep|tiptoe|slip|skulk)\s*(?:to|into|toward|towards|up|down|past|through|in|out)?\s*(.*)$/))) return { type: 'sneak', dest: clean(m[1]) || undefined };
-  if ((m = t.match(/^(?:go|walk|head|travel|move|journey|return|proceed|wander|stroll|march|hike|climb|descend|ascend|enter|leave|exit|follow|take the|run|jog|hurry|make my way|make our way|set off|set out|cross|step|back)\b\s*(to|into|toward|towards|up|down|through|in|out|over|inside|outside|for|along|on|the)?\s*(.*)$/))) {
+  if ((m = t.match(/^(?:go|walk|head|travel|move|journey|return|proceed|wander|stroll|march|hike|climb|descend|ascend|enter|leave|exit|follow|take the|run|jog|hurry|make my way|make our way|set off|set out|cross|step|back)\b\s*(?:(to|into|toward|towards|up|down|through|in|out|over|inside|outside|for|along|on|the)\b)?\s*(.*)$/))) {
     const prep = m[1];
     const rest = clean(m[2] ?? '');
     const dest = rest || (prep && DIRS[prep] ? DIRS[prep] : '') || (/^(leave|exit)/.test(t) ? 'out' : /^climb/.test(t) ? 'up' : /^descend/.test(t) ? 'down' : /^(back|return)/.test(t) ? 'back' : '');

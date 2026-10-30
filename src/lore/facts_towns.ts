@@ -1,0 +1,131 @@
+// The towns of Lahti: what everyone knows about them, and what the locals know.
+import type { Fact } from './types';
+import { F } from './facts_world';
+
+export const TOWN_FACTS: Fact[] = [
+  // ---- Breda ----
+  F('t_br1', 'breda', 'Breda is a palisade village at the crossroads: the Royal Road east and west, a north road to the foothills, and a south road to the Mire.', 'common', { weight: 2 }),
+  F('t_br2', 'breda', 'Breda grew up fast after the war, around a well, a market square and the Smoking Barrel.', 'common'),
+  F('t_br3', 'breda', 'Breda has four gates now, a dozen militia, paired towers at every gate and a watchtower in the north-east corner.', 'local:breda'),
+  F('t_br4', 'breda,suomi', 'From Breda, Suomi is a day west, Galilin a day east, the foothills half a day north and the Mire three days south.', 'local:breda'),
+  F('t_br5', 'breda', 'The baker in Breda hears everything the guards say at breakfast. The smith hears everything else over his hammer.', 'local:breda', { rumour: true }),
+  F('t_br6', 'breda,velvet_lantern', 'The Velvet Lantern in the south-west corner is discreet, comfortable, and the best-informed house in Breda.', 'local:breda'),
+  F('t_br7', 'breda', 'The residential quarter along the north wall is farmers, labourers and old soldiers. They hear the bell on still nights.', 'local:breda'),
+  F('t_br8', 'breda,militia', 'The guards on Breda\'s north gate are the most nervous in Lahti. They\'re closest to the bell.', 'local:breda', { rumour: true }),
+  F('t_br9', 'breda,east_farms', 'The east farms are just outside the wall: the Thatch place, mostly, and their stubborn goats.', 'local:breda'),
+  // ---- Suomi ----
+  F('t_su1', 'suomi', 'Suomi is the capital: white spires above the river, elven courts, and Queen Elisiah\'s palace.', 'common', { weight: 2 }),
+  F('t_su2', 'suomi', 'The fencing halls of Suomi never closed, not even in the war.', 'common'),
+  F('t_su3', 'suomi', 'There are cellars under the palace older than the palace. Nobody admits to having been down them.', 'common', { rumour: true }),
+  F('t_su4', 'suomi', 'Suomi\'s roofs are green copper. On a clear day you can see them from the Royal Road an hour out.', 'common'),
+  F('t_su5', 'suomi,frostpetal', 'In the salons of Suomi they sniff frostpetal off leaf-shaped silver spoons and call it conversation.', 'local:suomi'),
+  F('t_su6', 'suomi,silver_watch', 'The Silver Watch stand at every palace gate in dress cloaks, with silver-fitted guns under them.', 'local:suomi'),
+  F('t_su7', 'suomi', 'Suomi people think the world ends at the river. Some of them have never been east of Breda.', 'common', { rumour: true }),
+  F('t_su8', 'suomi', 'In Suomi, the price of everything doubles once they hear your accent.', 'local:suomi'),
+  F('t_su9', 'suomi', 'Suomi elven vintage costs a gold piece a glass. It\'s worth about half that.', 'trade:innkeeper'),
+  // ---- Borschardt ----
+  F('t_bo1', 'borschardt', 'Borschardt is a city of bridges, banks and guilds. Everything there has a price, and a ledger.', 'common', { weight: 2 }),
+  F('t_bo2', 'borschardt', 'Borschardt has more bankers than bakers. Barge law runs the river there, and the guilds run the barges.', 'common'),
+  F('t_bo3', 'borschardt,counting_chapel', 'The counting chapel on Guild Street rings its bell for the close of trading. Lately it rings at midnight too.', 'local:borschardt', { reveals: 'borschardt_chapel' }),
+  F('t_bo4', 'borschardt', 'They say you can sell a bridge in Borschardt twice.', 'common', { rumour: true }),
+  F('t_bo5', 'borschardt', 'The Borschardt guilds are hiring "specialists" lately. Nobody says what for.', 'local:borschardt', { rumour: true }),
+  F('t_bo6', 'borschardt', 'The city watch in Borschardt answers gunfire inside a minute. Bankers pay for that.', 'local:borschardt'),
+  F('t_bo7', 'borschardt,counting_chapel', 'The oldest banking family in the city has prayed and audited in the counting chapel for two hundred years.', 'local:borschardt'),
+  F('t_bo8', 'borschardt,greenspire', 'There\'s an old crown archive on an island in the lake west of the city. Its roof is green, like Suomi\'s.', 'local:borschardt', { reveals: 'greenspire' }),
+  // ---- Tokarev ----
+  F('t_to1', 'tokarev,tokarev_works', 'Tokarev is the forge city. The crown arms works presses every legal cartridge in Lahti.', 'common', { weight: 2 }),
+  F('t_to2', 'tokarev,march_powder', 'The factory shifts at Tokarev run on March Powder. Nobody sleeps in Tokarev.', 'common', { rumour: true }),
+  F('t_to3', 'tokarev,silver', 'Silvering a blade at the Tokarev works costs a hundred gold. Silvered cartridges are ten apiece.', 'common'),
+  F('t_to4', 'tokarev', 'Tokarev smells of coal smoke and hot brass, and the river below the works runs warm all winter.', 'local:tokarev'),
+  F('t_to5', 'tokarev', 'Tokarev sends men to the works the way other towns send them to the fields. Half of them are deaf by forty.', 'local:tokarev'),
+  F('t_to6', 'tokarev', 'The Tokarev officer\'s pistol jams more than it should. The works say that\'s a lie. The soldiers say it isn\'t.', 'trade:soldier'),
+  // ---- Largo ----
+  F('t_la1', 'largo', 'Largo is a river port on the Aimo with a shallow harbour and a long tradition of smuggling.', 'common', { weight: 2 }),
+  F('t_la2', 'largo', 'Everything unstamped in Lahti comes through Largo in crates marked FISH. They never smell of fish.', 'common', { rumour: true }),
+  F('t_la3', 'largo,largo_bell', 'There\'s a bell hung on an old cargo derrick over the water in Largo. It rings at midnight now.', 'local:largo', { reveals: 'largo_bell' }),
+  F('t_la4', 'largo', 'Don\'t buy grey mercy in Largo. Don\'t ask what\'s in the FISH crates. Don\'t fall in the river.', 'local:largo'),
+  F('t_la5', 'largo', 'The quays at Largo stand on rotting pilings. The current under them takes people twenty feet before they know it.', 'local:largo'),
+  F('t_la6', 'largo,cult', 'The cult moves its candles through Largo. The smugglers don\'t care who\'s paying.', 'trade:thief', { rumour: true }),
+  // ---- Coltale ----
+  F('t_co1', 'coltale', 'Coltale is a garrison town that was never demobilised: veterans, drill yards, and Lahti\'s largest war cemetery.', 'common', { weight: 2 }),
+  F('t_co2', 'coltale,aimo_bridge', 'Coltale sits on the west bank of the Aimo. The only land road in crosses the four-span Aimo Bridge from Brumandell.', 'common'),
+  F('t_co3', 'coltale', 'Coltale lives on fish, river freight and salt. The town only talks at two hours: the fishmarket before nine, and the Salt & Anchor after dark.', 'local:coltale'),
+  F('t_co4', 'coltale,coltale_memorial', 'The Memorial of Greymarch is out past the cemetery postern: names of the dead carved in rows, floor to ceiling.', 'local:coltale', { reveals: 'coltale_memorial' }),
+  F('t_co5', 'coltale,coltale_memorial,bells', 'The memorial bell used to ring once a year for the fallen. Now it rings every night. Half the town buried someone there.', 'local:coltale'),
+  F('t_co6', 'coltale', 'The crown orphanage at Coltale took in two hundred children of the war.', 'local:coltale'),
+  F('t_co7', 'coltale', 'The old garrison at Coltale is half empty: two dozen bored soldiers and a lot of polished boots.', 'local:coltale'),
+  F('t_co8', 'coltale,harbourmaster', 'The Coltale harbourmaster keeps a ledger of every hull, cargo and crew on the Aimo, including the ones from Largo.', 'local:coltale'),
+  F('t_co9', 'coltale,salt_anchor', 'The Salt & Anchor is the tavern by the quay. It smells of fish, tar and spilled ale, in that order.', 'local:coltale'),
+  F('t_co10', 'coltale', 'The garrison can close the Aimo Bridge in minutes and seal the town. It\'s happened twice since the war.', 'local:coltale'),
+  // ---- Brumandell ----
+  F('t_bm1', 'brumandell', 'Brumandell is a walled cobblestone town of two thousand under the foothills, with a market bigger than the town.', 'common', { weight: 2 }),
+  F('t_bm2', 'brumandell', 'Brumandell apples make the best cider in Lahti.', 'common'),
+  F('t_bm3', 'brumandell,treaty_statue', 'In the middle of Brumandell\'s square stands the Treaty Statue: a bronze orc and elf clasping hands over a stone. Locals meet "at the hands".', 'local:brumandell'),
+  F('t_bm4', 'brumandell,thimbleton', 'Brumandell has a lord, Lord Thimbleton, a paid town guard and a night watch. The town remembers everything in ledgers.', 'local:brumandell'),
+  F('t_bm5', 'brumandell', 'Brumandell has four gates: north to Herstal, south to Breda, west across the Aimo Bridge to Coltale, east to Tantal.', 'local:brumandell'),
+  F('t_bm6', 'brumandell,grogs', 'Grog\'s Tavern and Alehouse by the east gate does a clam chowder that will change your life.', 'common'),
+  F('t_bm7', 'brumandell', 'Fire a gun in Brumandell\'s square and half a dozen guards arrive inside a minute. The gates close on a whistle.', 'local:brumandell'),
+  F('t_bm8', 'brumandell', 'The foothill families came down to Brumandell when the bell started. They don\'t talk about it.', 'local:brumandell'),
+  F('t_bm9', 'brumandell,copper_kettle,nine_bells', 'For food in Brumandell: the Copper Kettle if you want roasts and pies at too high a price, the Nine Bells if you want it loud and late.', 'local:brumandell'),
+  F('t_bm10', 'brumandell,velvet_hour', 'The Velvet Hour is Brumandell\'s brothel and bathhouse, and the best-informed building in town.', 'local:brumandell'),
+  F('t_bm11', 'brumandell,watcher', 'Something attacked Brumandell from the south gate: zombies, and a stone thing that flew. They say it broke the gate on purpose.', 'local:brumandell', { rumour: true }),
+  F('t_bm12', 'brumandell,watcher', 'People in Brumandell swear there\'s a second stone shape on the rooftops. It\'s never there when you look twice.', 'local:brumandell', { rumour: true }),
+  F('t_bm13', 'brumandell,nine_bells', 'Nobody can explain why the Nine Bells Eatery is called that. The owner gets twitchy if you ask.', 'local:brumandell'),
+  // ---- Herstal ----
+  F('t_he1', 'herstal', 'Herstal is the last stop before the northern pass: a cold harbour on the north-east peninsula, snowed in half the year.', 'common', { weight: 2 }),
+  F('t_he2', 'herstal,weeping_glacier', 'The glacier above Herstal is melting from the inside. There are soldiers in the ice, closer to the surface every month.', 'common', { rumour: true, reveals: 'weeping_glacier' }),
+  F('t_he3', 'herstal', 'Herstal fishermen don\'t sail on the night of the new moon.', 'local:herstal'),
+  F('t_he4', 'herstal', 'In Herstal they put a lantern on every roof and light it at noon in winter. It helps, a bit.', 'local:herstal'),
+  F('t_he5', 'herstal,peaks', 'Herstal hunters say something moves on the glacier at night, slow and very large.', 'local:herstal', { rumour: true }),
+  // ---- Tantal ----
+  F('t_ta1', 'tantal', 'Tantal is a small mining village in the eastern hills, a day east of Brumandell over a short bridge.', 'common', { weight: 2 }),
+  F('t_ta2', 'tantal,forgotten_workshop', 'Tantal\'s newest shaft broke into worked stone that no dwarf will claim. The miners sealed the adit and won\'t go back.', 'common', { rumour: true, reveals: 'forgotten_workshop' }),
+  F('t_ta3', 'tantal', 'Tantal sends half its sons to the army and gets a third of them back.', 'local:tantal'),
+  F('t_ta4', 'tantal,odessa', 'Odessa Brask runs the Tantal mine. Twelve men came back from the new shaft wrong, and she hasn\'t slept since.', 'local:tantal', { rumour: true }),
+  F('t_ta5', 'tantal', 'The ore carts from Tantal stopped coming to Brumandell. The last one came back without its driver.', 'local:brumandell', { rumour: true }),
+  // ---- Galilin ----
+  F('t_ga1', 'galilin', 'Galilin is the ford-and-market town where the Royal Road crosses the eastern river. Every caravan crosses there, and every rumour.', 'common', { weight: 2 }),
+  F('t_ga2', 'galilin', 'Galilin red is rough and generous, like the people who drink it.', 'common'),
+  F('t_ga3', 'galilin', 'The card game is named after the town. The town would like it back.', 'local:galilin'),
+  F('t_ga4', 'galilin', 'Caravans from the east coast come through Galilin twice a month. That\'s when the prices go up.', 'local:galilin'),
+  F('t_ga5', 'galilin,erased_face', 'Sailors east of Galilin call the coastline "the Queen\'s Profile". Brow, nose, lips, chin. Nobody knows which queen.', 'local:galilin', { reveals: 'erased_face' }),
+  // ---- Rastbrook ----
+  F('t_ra1', 'rastbrook', 'Rastbrook is a hamlet on the south road, two days from Breda. Carts stop there on the way to the Mire.', 'common'),
+  F('t_ra2', 'rastbrook,fenwick', 'Master Fenwick Tealeaf comes through Rastbrook. Hide your valuables and your opinions.', 'local:rastbrook'),
+  // ---- Shpagin ----
+  F('t_sh1', 'shpagin', 'Shpagin is stilt-houses and eel traps at the edge of the Southern Mire, a large village on legs.', 'common', { weight: 2 }),
+  F('t_sh2', 'shpagin,mire', 'The Mire is creeping north into Shpagin. Every year the stilts get longer.', 'local:shpagin'),
+  F('t_sh3', 'shpagin,drowned_shrine', 'Barge folk won\'t pole past the Drowned Shrine after dark. It\'s a night\'s pole-barge from Shpagin.', 'local:shpagin', { reveals: 'drowned_shrine' }),
+  F('t_sh4', 'shpagin,widows_cap', 'Swamp folk in Shpagin eat Widow\'s Cap as a sacrament. Don\'t try it.', 'local:shpagin'),
+  F('t_sh5', 'shpagin', 'In Shpagin every house has a rope tied to the next one, in case.', 'local:shpagin'),
+  // ---- Madsen ----
+  F('t_ma1', 'madsen', 'Madsen is a fishing port on the south-east coast where the Mire drains to the sea.', 'common', { weight: 2 }),
+  F('t_ma2', 'madsen,firearms', 'Everything from across the Northern Ocean lands at Madsen first, including the guns.', 'common'),
+  F('t_ma3', 'madsen', 'The nets at Madsen are coming up heavy lately, and not with fish.', 'common', { rumour: true }),
+  F('t_ma4', 'madsen', 'They say the Madsen light gun is the fortune that built the fishing village. Nobody fishes as much as they used to.', 'local:madsen', { rumour: true }),
+  // ---- Nagant ----
+  F('t_na1', 'nagant', 'Nagant is a cliff hamlet of lighthouse keepers and hermits on the north-west coast.', 'common', { weight: 2 }),
+  F('t_na2', 'nagant', 'The Nagant lighthouse keeper swears a second light answers hers from the sea on moonless nights.', 'common', { rumour: true }),
+  F('t_na3', 'nagant,peaks', 'Hermits come down from the Peaks to Nagant for salt and silence, and they don\'t bring news.', 'local:nagant'),
+  // ---- Radom ----
+  F('t_rd1', 'radom', 'Radom is the border-watch town facing the orc lands, with the treaty checkpoint on the western road.', 'common', { weight: 2 }),
+  F('t_rd2', 'radom,firearms', 'Radom used to log every stamped weapon in Lahti. The ledgers are still there; nobody reads them.', 'common'),
+  F('t_rd3', 'radom', 'A month in the cells at Radom will teach you to mostly not do things.', 'local:radom'),
+  F('t_rd4', 'radom,greenspire,stillmere', 'From Radom you can see the green tower on the lake on a clear evening. Locals don\'t look long.', 'local:radom', { reveals: 'greenspire' }),
+  // ---- Samopal ----
+  F('t_sa1', 'samopal', 'Samopal is a crossroads waystation on the Royal Road: inns, stables and a tollhouse.', 'common', { weight: 2 }),
+  F('t_sa2', 'samopal,treaty_stone', 'The Treaty Stone stands west of Samopal, out on the border, where the peace was signed.', 'common', { reveals: 'treaty_stone' }),
+  F('t_sa3', 'samopal,orcs', 'Half the faces in the Samopal market are orcish, and that\'s fine now.', 'local:samopal'),
+  // ---- Lebel ----
+  F('t_le1', 'lebel', 'Lebel is a shepherd town in the western hills, with the best harvest fairs in Lahti.', 'common', { weight: 2 }),
+  F('t_le2', 'lebel,doss', 'Old Doss up in the foothills has cousins in Lebel. Half the shepherds in Lahti are related somehow.', 'local:lebel'),
+  F('t_le3', 'lebel', 'Lebel girls are said to marry for love, which old men find very upsetting.', 'local:lebel', { rumour: true }),
+  // ---- Carcano ----
+  F('t_ca1', 'carcano', 'Carcano is a half-abandoned quarry town near the southern border, with a cavalry post that never left.', 'common', { weight: 2 }),
+  F('t_ca2', 'carcano', 'The stone for the old anchor-chapels was cut at Carcano. The masons there still tell how the seals were built.', 'local:carcano'),
+  F('t_ca3', 'carcano,firearms', 'The Carcano cavalry carbine is named for the town. The town is very proud of that.', 'local:carcano'),
+  // ---- Maxim ----
+  F('t_mx1', 'maxim', 'Maxim is drained-marsh farmland behind the levees, south of Largo.', 'common', { weight: 2 }),
+  F('t_mx2', 'maxim', 'The ditches behind the Maxim levees give things back. Dig deep enough and you find the war.', 'common', { rumour: true }),
+  F('t_mx3', 'maxim,undead', 'A Maxim farmer swears the ditch gave up a body last month, and it got up and walked off west.', 'local:maxim', { rumour: true }),
+];

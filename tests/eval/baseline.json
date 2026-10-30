@@ -1,0 +1,68 @@
+{
+ "summary": {
+  "cases": 300,
+  "errors": 0,
+  "echoPct": 2,
+  "genericPct": 30,
+  "relevantPct": 21,
+  "avgWords": 18,
+  "byCat": {
+   "lore": {
+    "n": 185,
+    "echo": 0,
+    "generic": 33,
+    "relevant": 22,
+    "words": 19
+   },
+   "followup": {
+    "n": 10,
+    "echo": 0,
+    "generic": 80,
+    "relevant": 0,
+    "words": 12
+   },
+   "small": {
+    "n": 20,
+    "echo": 0,
+    "generic": 15,
+    "relevant": null,
+    "words": 17
+   },
+   "statement": {
+    "n": 10,
+    "echo": 10,
+    "generic": 10,
+    "relevant": null,
+    "words": 13
+   },
+   "opinion": {
+    "n": 10,
+    "echo": 0,
+    "generic": 20,
+    "relevant": null,
+    "words": 17
+   },
+   "quest": {
+    "n": 10,
+    "echo": 0,
+    "generic": 10,
+    "relevant": null,
+    "words": 17
+   },
+   "action": {
+    "n": 45,
+    "echo": 9,
+    "generic": 20,
+    "relevant": null,
+    "words": 18
+   },
+   "scene": {
+    "n": 10,
+    "echo": 0,
+    "generic": 40,
+    "relevant": null,
+    "words": 26
+   }
+  }
+ }
+}

@@ -1,6 +1,6 @@
 {
   "name": "hams-tavern",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "description": "Hams Tavern: The Bells of Lahti — a solo fantasy RPG with an offline game master.",
   "type": "module",
@@ -9,10 +9,12 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eval": "tsx scripts/eval.ts"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.0",
+    "tsx": "4.19.2",
     "typescript": "5.6.3",
     "vite": "5.4.11",
     "vitest": "2.1.8"
