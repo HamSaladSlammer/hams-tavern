@@ -40,3 +40,17 @@ describe('the game master answers instead of echoing', () => {
     expect(t).toMatch(/day/);
   });
 });
+
+import { suggestionGroups } from '../src/engine/game';
+describe('the action bar', () => {
+  it('groups actions into dropdowns, and fighting gets its own', () => {
+    const s = hero();
+    const g = suggestionGroups(s);
+    expect(g.map((x) => x.id)).toEqual(['talk', 'move', 'act', 'me']);
+    expect(g.find((x) => x.id === 'talk')!.items.some((i) => /talk to the dwarves/i.test(i.label))).toBe(true);
+    expect(g.find((x) => x.id === 'move')!.items.some((i) => i.cmd.startsWith('go '))).toBe(true);
+    expect(g.every((x) => x.items.every((i) => i.label && typeof i.cmd === 'string'))).toBe(true);
+    run(s, 'punch borin'); run(s, 'punch borin');
+    expect(suggestionGroups(s)[0].id).toBe('fight');
+  });
+});

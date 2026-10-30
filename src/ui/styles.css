@@ -291,3 +291,21 @@ svg text { fill: var(--die-ink); font-family: var(--display), Georgia, serif; fo
 .camp.gen { border-style: dashed; }
 .camp-preview { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 12px 0; }
 .camp-preview b { color: var(--gold); }
+
+/* ---------- action bar ---------- */
+.controls { position: relative; }
+.actbar { display: flex; gap: 6px; padding-bottom: 6px; }
+.actbtn { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 8px 6px; font: 600 .82em var(--serif); white-space: nowrap; }
+.actbtn .ai { font-size: 1em; }
+.actbtn .caret { font-size: .7em; color: var(--dim); transition: transform .15s; }
+.actbtn.open { border-color: var(--gold); color: var(--gold); background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+.actbtn.open .caret { transform: rotate(180deg); }
+.actbtn.fight { border-color: color-mix(in srgb, var(--blood) 60%, var(--line)); }
+.actdrop { position: absolute; left: 10px; right: 10px; bottom: calc(100% + 4px); max-height: 52vh; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 -10px 30px rgba(0,0,0,.45); z-index: 9; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.actdrop[hidden] { display: none; }
+.actdrop-h { grid-column: 1 / -1; font: .72em var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 4px 6px 2px; }
+.actitem { text-align: left; background: var(--bg2); border: 1px solid transparent; color: var(--ink); border-radius: 10px; padding: 9px 10px; font: .88em var(--serif); line-height: 1.25; }
+.actitem:hover, .actitem:focus-visible { border-color: var(--gold); }
+.actitem.attack { color: var(--blood); }
+.actitem.prompt { grid-column: 1 / -1; color: var(--gold); font-style: italic; background: none; border: 1px dashed var(--line); }
+@media (min-width: 700px) { .actdrop { grid-template-columns: repeat(3, 1fr); } }

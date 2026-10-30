@@ -1358,6 +1358,60 @@ function threats(c: Ctx) {
 }
 
 // ---------- suggestions ----------
+export interface ActionGroup { id: 'fight' | 'talk' | 'move' | 'act' | 'me'; label: string; icon: string; items: { label: string; cmd: string; prompt?: boolean }[] }
+/** The same ideas as suggestions(), sorted into the action bar's dropdowns, plus the everyday options. */
+export function suggestionGroups(s: GameState): ActionGroup[] {
+  if (s.phase !== 'play' || !s.pc) return [];
+  const c = makeCtx({ ...s, log: [] } as GameState, []);
+  const sug = suggestions(s);
+  const G: Record<ActionGroup['id'], ActionGroup> = {
+    fight: { id: 'fight', label: 'Fight', icon: '⚔', items: [] },
+    talk: { id: 'talk', label: 'Talk', icon: '💬', items: [] },
+    move: { id: 'move', label: 'Move', icon: '🧭', items: [] },
+    act: { id: 'act', label: 'Do', icon: '✋', items: [] },
+    me: { id: 'me', label: 'Me', icon: '📜', items: [] },
+  };
+  const add = (g: ActionGroup['id'], label: string, cmd = label, prompt = false) => { if (!G[g].items.some((x) => x.cmd === cmd)) G[g].items.push({ label, cmd, prompt }); };
+  const isTalk = (x: string) => /^(talk|ask|say|tell|persuade|intimidate|apologi[sz]e|deceive|bluff|any rumou?rs|pay the toll|talk our way|thank|greet|flirt)/i.test(x);
+  const isMove = (x: string) => /^(go |travel|continue|explore|leave|open the map|enter|climb down|flee)/i.test(x);
+  if (s.combat) {
+    for (const x of sug) (isTalk(x) ? add('talk', x) : add('fight', x));
+    add('fight', 'end turn'); add('fight', 'dodge'); add('fight', 'flee');
+    if (s.pc.inventory.some((x) => ITEMS[x.id]?.kind === 'potion')) add('act', 'drink a potion', 'drink potion');
+    add('talk', 'Shout something…', 'say "', true); add('talk', 'surrender'); add('act', 'look'); add('act', 'Try something else…', '', true);
+  } else {
+    for (const x of sug) isTalk(x) || /^(Ask |Tell )/.test(x) ? add('talk', x) : isMove(x) ? add('move', x) : add('act', x);
+    // people here
+    for (const id of presentNpcs(c).filter((x) => x !== s.talkingTo).slice(0, 6)) add('talk', `talk to ${NPCS[id]?.name ?? id}`, `talk to ${NPCS[id]?.names[0] ?? id}`);
+    const crowd = DM.crowdHere(s.loc);
+    if (crowd === 'tavern') { add('talk', 'talk to the barmaid'); add('talk', 'talk to the stranger'); add('talk', 'any rumours?'); add('talk', 'tell the room a joke'); }
+    if (crowd === 'square') { add('talk', 'talk to the guard'); add('talk', 'talk to a farmer', 'talk to the farmer'); }
+    add('talk', 'look around for anyone suspicious');
+    if (s.talkingTo) { add('talk', 'how are you?'); add('talk', 'tell me about yourself'); add('talk', 'what do you think of the queen?'); add('talk', 'goodbye'); }
+    add('talk', 'Say something…', 'say "', true);
+    // ways out
+    const r = room(s);
+    for (const e of r.exits.filter((e) => !e.hidden?.(c) && !(e.blocked && e.to === r.id))) add('move', e.label, e.to.startsWith('travel:') ? 'leave' : `go ${e.names[0]}`);
+    if (s.world?.journey) add('move', `continue to ${World.locName(s, s.world.journey.dest)}`, 'continue');
+    if (/^(town:|breda_square)/.test(s.loc)) add('move', 'explore the area');
+    add('move', 'open the World map', 'open the map');
+    add('move', 'Travel to…', 'travel to ', true);
+    // things to do
+    add('act', 'look around', 'look');
+    add('act', 'search the area', 'search');
+    if (r.shop) add('act', 'shop');
+    if (r.rest === 'long') add('act', 'sleep');
+    if (r.rest !== 'none' && s.pc.hp < s.pc.maxHp) add('act', 'short rest');
+    if (DM.crowdHere(s.loc) === 'square') add('act', 'read the notice board');
+    if (DM.crowdHere(s.loc)) add('act', 'look for work', 'work');
+    add('act', 'Do something else…', '', true);
+  }
+  add('me', 'character sheet', 'sheet'); add('me', 'inventory'); add('me', 'journal'); add('me', 'campaign');
+  if (!s.combat) { add('me', 'threats'); add('me', 'my jobs'); }
+  add('me', 'roll a d20', 'roll d20'); add('me', 'open the dice tray', 'dice'); add('me', 'help');
+  return (s.combat ? [G.fight, G.act, G.talk, G.me] : [G.talk, G.move, G.act, G.me]).filter((g) => g.items.length);
+}
+
 export function suggestions(s: GameState): string[] {
   if (s.phase !== 'play' || !s.pc) return [];
   const lines: LogLine[] = [];

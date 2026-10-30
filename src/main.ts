@@ -1,5 +1,5 @@
 import './ui/styles.css';
-import { handle, newState, suggestions, statusLine, peek, migrate, beginGame, mapView } from './engine/game';
+import { handle, newState, suggestionGroups, statusLine, peek, migrate, beginGame, mapView } from './engine/game';
 import { BattleMap } from './ui/map';
 import { openForge } from './ui/forge';
 import { openCampaigns } from './ui/campaigns';
@@ -92,15 +92,7 @@ function refresh() {
     $('place').textContent = 'Hams Tavern';
     $('clock').textContent = state.phase === 'create' ? 'Creating your character' : '';
   }
-  chipsEl.innerHTML = '';
-  for (const s of suggestions(state)) {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'chip' + (/^(attack|punch|kick|shoot|cast|stab|finish)/.test(s) ? ' attack' : '');
-    b.textContent = s;
-    b.onclick = () => send(s);
-    chipsEl.appendChild(b);
-  }
-  chipsEl.scrollLeft = 0;
+  renderActionBar();
   input.placeholder = state.combat ? 'Punch, kick, cast, shoot, dodge…' : 'What do you do?';
 }
 
@@ -109,6 +101,50 @@ const SLOTS = 3;
 const slotKey = (i: number) => (i === 0 ? SAVE_KEY : `${SAVE_KEY}.s${i + 1}`);
 let slot = (() => { try { const n = Number(backend.load('hams.slot')); return n >= 0 && n < SLOTS ? n : 0; } catch { return 0; } })();
 function readSlot(i: number): GameState | null { try { const raw = backend.load(slotKey(i)); const g = raw ? migrate(JSON.parse(raw)) : null; return g && g.phase === 'play' && g.pc ? g : null; } catch { return null; } }
+// ---------- the action bar: dropdowns for talking, moving, doing and fighting ----------
+let openGroup: string | null = null;
+const dropEl = document.createElement('div');
+dropEl.className = 'actdrop'; dropEl.hidden = true;
+chipsEl.insertAdjacentElement('beforebegin', dropEl);
+chipsEl.className = 'actbar';
+function renderActionBar() {
+  const groups = suggestionGroups(state);
+  chipsEl.innerHTML = '';
+  if (openGroup && !groups.some((g) => g.id === openGroup)) openGroup = null;
+  for (const g of groups) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `actbtn${g.id === 'fight' ? ' fight' : ''}${openGroup === g.id ? ' open' : ''}`;
+    b.setAttribute('aria-expanded', String(openGroup === g.id));
+    b.innerHTML = `<span class="ai">${g.icon}</span>${g.label}<span class="caret">▾</span>`;
+    b.onclick = () => { openGroup = openGroup === g.id ? null : g.id; renderActionBar(); };
+    chipsEl.appendChild(b);
+  }
+  const g = groups.find((x) => x.id === openGroup);
+  dropEl.hidden = !g;
+  dropEl.innerHTML = '';
+  if (!g) return;
+  const head = document.createElement('div'); head.className = 'actdrop-h'; head.textContent = g.label; dropEl.appendChild(head);
+  for (const it of g.items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `actitem${it.prompt ? ' prompt' : ''}${/^(attack|punch|kick|shoot|cast|stab|finish)/.test(it.cmd) ? ' attack' : ''}`;
+    b.textContent = it.label;
+    b.onclick = () => {
+      openGroup = null;
+      if (it.prompt) { dropEl.hidden = true; renderActionBar(); input.value = it.cmd; input.focus(); input.setSelectionRange(input.value.length, input.value.length); return; }
+      send(it.cmd);
+    };
+    dropEl.appendChild(b);
+  }
+}
+document.addEventListener('click', (e) => {
+  if (!openGroup) return;
+  const t = e.target as HTMLElement;
+  if (!t.isConnected || t.closest('.actdrop') || t.closest('.actbar')) return;
+  openGroup = null; renderActionBar();
+});
+
 function save() { try { backend.save(slotKey(slot), JSON.stringify(state)); backend.save('hams.slot', String(slot)); } catch { /* full storage: ignore */ } }
 
 function send(text: string) {
@@ -240,6 +276,8 @@ function menu(body: HTMLElement) {
   const about = document.createElement('div'); about.className = 'small';
   about.innerHTML = `<p><b>Hams Tavern: The Bells of Lahti</b> v${VERSION}${BUILD ? ` (build ${BUILD})` : ''}. A solo fantasy RPG with an offline game master. World and story © Jared ("HamSaladSlammer").</p>
   <p>This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.</p>
+  <p>This work includes material taken from the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC, available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.</p>
+  <p>Fonts: Alegreya, IM Fell English and IBM Plex Mono, under the SIL Open Font License 1.1. Hams Tavern is not affiliated with or endorsed by Wizards of the Coast.</p>
   <p>Saves stay on this device. Nothing is sent anywhere.</p>`;
   body.appendChild(about);
 }

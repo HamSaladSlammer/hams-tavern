@@ -4,7 +4,7 @@ import type { ArmorDef, ItemDef, WeaponDef } from '../engine/types';
 
 const W = (w: WeaponDef) => w;
 export const EXTRA_WEAPONS: WeaponDef[] = [
-  W({ id: 'webley_revolver', name: 'Webley-pattern Revolver', category: 'firearm', ranged: true, damage: '1d8', dtype: 'piercing', range: [30, 90], ammo: 'pistol', capacity: 6, price: 17500 }),
+  W({ id: 'webley_revolver', name: 'Wexley-pattern Revolver', category: 'firearm', ranged: true, damage: '1d8', dtype: 'piercing', range: [30, 90], ammo: 'pistol', capacity: 6, price: 17500 }),
   W({ id: 'toggle_pistol', name: 'Borschardt Toggle-lock Pistol', category: 'firearm', ranged: true, damage: '1d8', dtype: 'piercing', range: [40, 120], ammo: 'pistol', capacity: 8, price: 35000 }),
   W({ id: 'mosin_rifle', name: 'Mosin-pattern Service Rifle', category: 'firearm', ranged: true, damage: '1d12', dtype: 'piercing', range: [80, 240], ammo: 'rifle', capacity: 5, twoHanded: true, price: 40000 }),
   W({ id: 'lee_rifle', name: 'Lee Long-magazine Rifle', category: 'firearm', ranged: true, damage: '1d12', dtype: 'piercing', range: [80, 240], ammo: 'rifle', capacity: 10, twoHanded: true, price: 45000 }),
