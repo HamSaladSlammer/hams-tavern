@@ -56,6 +56,7 @@ export class DiceTray {
   private adv: '' | 'adv' | 'dis' = '';
   private history: HistoryEntry[] = [];
   private mini: HTMLElement;
+  private check: { label: string; done: (rolls: number[]) => void } | null = null;
   constructor(private root: HTMLElement, private look: DiceLook, private onLook: (l: DiceLook) => void, private onRoll: (text: string) => void) {
     this.mini = document.createElement('div');
     this.mini.className = 'dice-mini';
@@ -74,7 +75,16 @@ export class DiceTray {
 
   get isOpen() { return !this.root.hidden; }
   open() { this.root.hidden = false; this.render(); }
-  close() { this.root.hidden = true; }
+  close() { this.root.hidden = true; if (this.check) { this.check = null; this.pool = {}; this.mod = 0; this.adv = ''; } }
+
+  /** The game asked for a check: set up a d20 with the right bonus, and hand back what lands. */
+  rollFor(ask: { label: string; bonus: number; adv: 'adv' | 'dis' | 'none' }, done: (rolls: number[]) => void, auto = true) {
+    this.pool = { 20: 1 }; this.mod = ask.bonus; this.adv = ask.adv === 'none' ? '' : ask.adv;
+    this.check = { label: ask.label, done };
+    this.root.hidden = false;
+    this.render();
+    if (auto) (this.root.querySelector('[data-dt="roll"]') as HTMLButtonElement | null)?.click();
+  }
   showLook() { const d = this.root.querySelector('details'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); } }
 
   /** Roll an expression from the text box ("/roll 2d6+3"). */
@@ -90,6 +100,7 @@ export class DiceTray {
     const poolText = this.poolExpr() || 'Tap dice to add them';
     const L = this.look;
     this.root.innerHTML = `<div class="dt-inner">
+      ${this.check ? `<div class="dt-check-h">🎲 ${esc(this.check.label)} check <span>tap Roll</span></div>` : ''}
       <div class="dt-head"><b>Dice</b><span class="dt-sub">${esc(poolText)}${this.mod ? ` ${this.mod > 0 ? '+' : ''}${this.mod}` : ''}${this.adv ? ` · ${this.adv === 'adv' ? 'advantage' : 'disadvantage'}` : ''}</span><button class="dt-x" data-dt="close" aria-label="Close">✕</button></div>
       <div class="dt-mat" id="dt-mat">${tumble ? '' : `<p class="dt-hint">${this.history[0] ? `Last: ${esc(this.history[0].label)} = <b>${this.history[0].total}</b>` : 'Pick your dice below, then roll.'}</p>`}</div>
       <div class="dt-row">${SIDES.map((n) => `<button class="dt-die" data-dt="add" data-n="${n}" aria-label="Add a d${n}">${dieSvg(n, n === 100 ? '%' : String(n), 38)}<span>d${n}${this.pool[n] ? ` ×${this.pool[n]}` : ''}</span></button>`).join('')}</div>
@@ -152,6 +163,14 @@ export class DiceTray {
   private show(r: { total: number; dice: Rolled[]; mod: number; label: string }) {
     this.history.unshift({ label: r.label, total: r.total, dice: r.dice, mod: r.mod });
     this.history.length = Math.min(this.history.length, 20);
+    const chk = this.check;
+    if (chk) {
+      this.render(r);
+      this.check = null;
+      const d20s = r.dice.filter((d) => d.sides === 20).map((d) => Math.abs(d.value));
+      window.setTimeout(() => { chk.done(d20s); this.pool = {}; this.mod = 0; this.adv = ''; window.setTimeout(() => { if (!this.check) this.root.hidden = true; }, 900); }, 1300);
+      return;
+    }
     this.render(r);
     this.onRoll(`🎲 ${r.label}: ${r.dice.map((d) => (d.kept ? d.value : `(${d.value})`)).join(', ')}${r.mod ? ` ${r.mod > 0 ? '+' : ''}${r.mod}` : ''} = ${r.total}`);
   }

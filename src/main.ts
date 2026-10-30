@@ -22,8 +22,8 @@ let state: GameState = newState();
 const history: string[] = [];
 let histIdx = -1;
 
-interface Prefs { theme: string; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; look?: DiceLook; colors?: CustomColours }
-let prefs: Prefs = { theme: 'dark', size: 'normal', dice: 'show', map: 'on' };
+interface Prefs { theme: string; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; checks: 'you' | 'auto'; look?: DiceLook; colors?: CustomColours }
+let prefs: Prefs = { theme: 'dark', size: 'normal', dice: 'show', map: 'on', checks: 'you' };
 try { prefs = { ...prefs, ...JSON.parse(backend.load(PREFS_KEY) ?? '{}') }; } catch { /* defaults */ }
 function applyPrefs() {
   const r = document.documentElement;
@@ -37,6 +37,18 @@ applyPrefs();
 function lineEl(l: LogLine, fresh: boolean): HTMLElement {
   const p = document.createElement('p');
   p.className = `l ${l.k}${fresh ? ' fresh' : ''}`;
+  if (l.k === 'ask') {
+    p.appendChild(document.createTextNode(l.t));
+    const row = document.createElement('span'); row.className = 'ask-row';
+    const roll = document.createElement('button'); roll.type = 'button'; roll.className = 'ask-btn primary'; roll.textContent = '🎲 Roll';
+    roll.onclick = () => rollCheck();
+    const own = document.createElement('button'); own.type = 'button'; own.className = 'ask-btn'; own.textContent = 'I rolled…';
+    own.onclick = () => { input.value = ''; input.placeholder = 'What did your d20 show? (1–20)'; input.focus(); };
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'ask-btn ghost'; no.textContent = 'Cancel';
+    no.onclick = () => send('cancel');
+    row.append(roll, own, no); p.appendChild(row);
+    return p;
+  }
   if (l.k === 'say' && l.who) {
     const w = document.createElement('span'); w.className = 'who'; w.textContent = l.who; p.appendChild(w);
     p.appendChild(document.createTextNode(l.t));
@@ -46,6 +58,16 @@ function lineEl(l: LogLine, fresh: boolean): HTMLElement {
 
 const tray = new DiceTray($('dicetray'), { ...DEFAULT_LOOK, ...(prefs.look ?? {}) }, (l) => { prefs.look = l; applyPrefs(); }, (txt) => { const l: LogLine = { k: 'roll', t: txt }; state.log.push(l); logEl.appendChild(lineEl(l, true)); requestAnimationFrame(() => { logEl.scrollTop = logEl.scrollHeight; }); save(); });
 
+/** Roll the waiting check on the dice tray, then hand the result to the game. */
+function rollCheck() {
+  const p = state.pendingRoll;
+  if (!p) return;
+  tray.rollFor(p.ask, (rolls) => send(`roll ${rolls.join(' ')}`));
+}
+function syncAsks() {
+  const asks = Array.from(logEl.querySelectorAll<HTMLElement>('.l.ask'));
+  asks.forEach((el, i) => { const live = !!state.pendingRoll && i === asks.length - 1; el.classList.toggle('done', !live); el.querySelectorAll('button').forEach((b) => { (b as HTMLButtonElement).disabled = !live; }); });
+}
 function render(lines: LogLine[], fresh = true) {
   if (fresh) { const d = lines.map((l) => (l.k === 'roll' ? d20Of(l.t) : null)).find(Boolean); if (d) tray.flash(d.value, d.outcome); }
   const frag = document.createDocumentFragment();
@@ -53,6 +75,7 @@ function render(lines: LogLine[], fresh = true) {
   logEl.appendChild(frag);
   while (logEl.children.length > 400) logEl.removeChild(logEl.firstChild!);
   requestAnimationFrame(() => { logEl.scrollTop = logEl.scrollHeight; });
+  syncAsks();
   refresh();
 }
 
@@ -95,7 +118,7 @@ function refresh() {
     $('clock').textContent = state.phase === 'create' ? 'Creating your character' : '';
   }
   renderActionBar();
-  input.placeholder = state.combat ? 'Punch, kick, cast, shoot, dodge…' : 'What do you do?';
+  input.placeholder = state.pendingRoll ? `Roll ${state.pendingRoll.ask.label}: tap Roll, or type your d20` : state.combat ? 'Punch, kick, cast, shoot, dodge…' : 'What do you do?';
 }
 
 // ---------- save slots ----------
@@ -112,6 +135,14 @@ chipsEl.className = 'actbar';
 function renderActionBar() {
   const groups = suggestionGroups(state);
   chipsEl.innerHTML = '';
+  if (state.pendingRoll) {
+    dropEl.hidden = true; openGroup = null;
+    const p = state.pendingRoll.ask;
+    const r = document.createElement('button'); r.type = 'button'; r.className = 'actbtn roll'; r.innerHTML = `<span class="ai">🎲</span>Roll ${p.label} (${p.bonus >= 0 ? '+' : ''}${p.bonus})`; r.onclick = () => rollCheck();
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'actbtn'; x.textContent = 'Cancel'; x.onclick = () => send('cancel');
+    chipsEl.append(r, x);
+    return;
+  }
   if (openGroup && !groups.some((g) => g.id === openGroup)) openGroup = null;
   for (const g of groups) {
     const b = document.createElement('button');
@@ -153,10 +184,12 @@ function send(text: string) {
   const t = text.trim();
   if (!t) return;
   if (state.phase !== 'play') { startNew(); return; }
-  if (/^\/?(roll|r)\s+[\dd+\- ]+(adv|advantage|dis|disadvantage)?$/i.test(t) || /^\/(roll|r)$/i.test(t) || /^(dice|dice tray|open (the )?dice( tray)?)$/i.test(t)) { if (/^\/?(roll|r)\s/i.test(t)) { if (!tray.rollText(t)) toast('Try something like "roll 2d6+3" or "roll d20 adv".'); } else tray.open(); return; }
+  if (state.pendingRoll && /^\/?(roll|r|roll it|roll the dice|roll for it)$/i.test(t) && prefs.look?.animate !== false) { rollCheck(); return; }
+  if (!state.pendingRoll && /^\/?(roll|r)\s+[\dd+\- ]+(adv|advantage|dis|disadvantage)?$/i.test(t) || /^\/(roll|r)$/i.test(t) || /^(dice|dice tray|open (the )?dice( tray)?)$/i.test(t)) { if (/^\/?(roll|r)\s/i.test(t)) { if (!tray.rollText(t)) toast('Try something like "roll 2d6+3" or "roll d20 adv".'); } else tray.open(); return; }
   if (/^(open (the )?(world )?map|world map|world|show (me )?the (world )?map|look at (the|my) map|check (the|my) map|atlas)$/i.test(t)) { openWorld(); return; }
   if (t) { history.unshift(t); history.length = Math.min(history.length, 50); }
   histIdx = -1;
+  state.rollMode = prefs.checks;
   const lines = handle(state, t);
   render(lines);
   save();
@@ -307,6 +340,7 @@ function settings(body: HTMLElement, reopen: () => void) {
   body.appendChild(own);
   if (luminance(cur.bg) > 0.5 === luminance(cur.ink) > 0.5) { const w = document.createElement('p'); w.className = 'small warn'; w.textContent = 'Your text and background are both light or both dark, so the text may be hard to read.'; body.appendChild(w); }
   body.appendChild(opt('Text size', 'size', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']], reopen));
+  body.appendChild(opt('Skill checks and saves', 'checks', [['you', 'I roll'], ['auto', 'Roll for me']], reopen));
   body.appendChild(opt('Dice rolls in the story', 'dice', [['show', 'Show'], ['hide', 'Hide']], reopen));
   body.appendChild(opt('Battle map', 'map', [['on', 'Always'], ['combat', 'In fights'], ['off', 'Off']], reopen));
   body.appendChild(menuButton('Dice and mat colours…', () => { panel.hidden = true; tray.open(); tray.showLook(); }));

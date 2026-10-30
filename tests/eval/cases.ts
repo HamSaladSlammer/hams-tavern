@@ -3,7 +3,8 @@
 
 export interface EvalCase {
   id: string;
-  cat: 'lore' | 'small' | 'action' | 'statement' | 'followup' | 'scene' | 'quest' | 'opinion';
+  cat: 'lore' | 'small' | 'action' | 'statement' | 'followup' | 'scene' | 'quest' | 'opinion' | 'check' | 'react';
+  roll?: string; // the check a good game master would ask for (skill name, lower case)
   where: string; // 'bells' (Breda tavern) or a town id (its inn)
   talk?: string; // who you're talking to first
   pre?: string[]; // earlier turns
@@ -128,5 +129,43 @@ ACT.push('I ask the barmaid what she has heard', 'I sit down with the strangers 
 ACT.forEach((t, i) => cases.push({ id: `act-${i}`, cat: 'action', where: ['bells', 'brumandell', 'coltale', 'suomi', 'largo'][i % 5], input: t }));
 const SCENE = ['look', 'what does this place look like?', 'who is here?', 'describe the room', 'what can I hear?', 'what can I smell?', 'is it busy?', 'what time is it?', 'what\'s the weather like outside?', 'where am I?'];
 SCENE.forEach((t, i) => cases.push({ id: `scene-${i}`, cat: 'scene', where: ['bells', 'brumandell', 'coltale', 'suomi', 'largo'][i % 5], input: t }));
+
+// things that should call for a roll, and which one
+const CHECKS: [string, string][] = [
+  ['I try to pick a pocket', 'sleight of hand'], ['I pick Squib\'s pocket', 'sleight of hand'], ['I climb onto the roof beams', 'athletics'], ['I sneak behind the bar', 'stealth'],
+  ['I lie to Squib and say I am a crown agent', 'deception'], ['I intimidate Squib', 'intimidation'], ['I persuade Squib to give me a free drink', 'persuasion'],
+  ['I try to tell if Squib is lying', 'insight'], ['I read the dwarves\' body language', 'insight'], ['is Squib hiding something?', 'insight'], ['I scare the dwarves', 'intimidation'],
+  ['I balance on a chair', 'acrobatics'], ['I hide under a table', 'stealth'], ['I steal a bottle from behind the bar', 'sleight of hand'], ['I juggle three mugs', 'performance'],
+  ['I try to calm the dog', 'animal handling'], ['I look for hidden doors', 'investigation'], ['I search for traps', 'perception'], ['I haggle with Squib', 'persuasion'],
+  ['I perform a song for the room', 'performance'], ['I try to lift the table', 'athletics'], ['I track footprints in the dirt', 'survival'], ['I try to remember what I know about undead', 'religion'],
+  ['I watch the card game', 'insight'], ['I challenge someone to arm wrestle', 'athletics'], ['I slip a coin into the tip jar unseen', 'sleight of hand'], ['I tap the walls for a hidden door', 'investigation'],
+  ['what do I know about the war?', 'history'], ['I size up the window table', 'insight'], ['I threaten the dwarves', 'intimidation'],
+];
+CHECKS.forEach(([t, sk], i) => cases.push({ id: `check-${i}`, cat: 'check', where: 'bells', input: t, roll: sk }));
+
+// people should react to the conversation so far and to how you've treated them
+const REACT: [string, string[], string, string[]][] = [
+  ['squib', ['my name is Vera'], 'how are you?', []],
+  ['squib', ['my name is Vera', 'I\'m from Tokarev'], 'what do you think of me?', ['you', 'all right', 'know', 'mind']],
+  ['dwarves', ['you are all idiots', 'you are all idiots'], 'where are you from?', ['business', 'why', 'likes you', 'tantal']],
+  ['dwarves', [], 'I fought at Greymarch', ['greymarch', 'field', 'friends', 'sorry', 'name']],
+  ['squib', [], 'I lost my sister in the war', ['sorry', 'yours', 'glass', 'drinks']],
+  ['dwarves', [], 'I killed a dragon', ['course', 'queen', 'drink', 'scratch']],
+  ['squib', [], 'I silenced the bell', ['heard', 'funny', 'ring', 'last night']],
+  ['squib', [], 'I\'m new in town', ['welcome', 'board', 'rules', 'barrel']],
+  ['dwarves', [], 'I\'m looking for the Pale Queen', ['loud', 'braver', 'madder', 'say that']],
+  ['dwarves', [], 'I\'m going to Coltale', ['coltale', 'day', 'road', 'north', 'east']],
+  ['dwarves', [], 'do you have any family?', ['children', 'eleven', 'twelve']],
+  ['squib', [], 'buy you a drink', ['shift', 'coin', 'thought']],
+  ['dwarves', [], 'what do you think of goblins?', ['goblin', 'spoons', 'back', 'mushroom', 'tougher']],
+  ['squib', [], 'who runs this town?', ['nobody', 'sergeant', 'pour']],
+  ['dwarves', [], 'I don\'t trust the crown', ['crown', 'queen', 'careful', 'loud', 'wrong', 'courier', 'peace']],
+  ['squib', [], 'what is there to do around here?', ['board', 'drinking', 'ale', 'breda']],
+  ['dwarves', ['tell me about Coltale'], 'what else?', ['coltale', 'garrison', 'memorial', 'fish', 'salt', 'aimo']],
+  ['squib', [], 'I ask around about the bells', ['bell', 'chapel', 'midnight', 'dead']],
+  ['dwarves', [], 'what can I hear?', ['fire', 'mugs', 'dwarves', 'boar', 'laugh', 'bench']],
+  ['squib', [], 'what time is it?', ['monday', 'may', 'morning', 'afternoon']],
+];
+REACT.forEach(([talk, pre, input, expect], i) => cases.push({ id: `react-${i}`, cat: 'react', where: 'bells', talk, pre, input, expect: expect.length ? expect : undefined }));
 
 export const CASES = cases;

@@ -205,8 +205,12 @@ export interface NpcMemory {
   topicsSeen: string[];
 }
 
+/** A check the game is waiting on the player to roll. */
+export interface RollAsk { kind: 'skill' | 'ability' | 'tool' | 'save'; label: string; bonus: number; adv: 'adv' | 'dis' | 'none' }
+export interface PendingRoll { input: string; rolls: number[][]; ask: RollAsk }
+
 export interface LogLine {
-  k: 'narr' | 'say' | 'you' | 'roll' | 'sys' | 'hit' | 'miss' | 'good' | 'bad' | 'title';
+  k: 'narr' | 'say' | 'you' | 'roll' | 'sys' | 'hit' | 'miss' | 'good' | 'bad' | 'title' | 'ask';
   t: string;
   who?: string;
 }
@@ -242,6 +246,8 @@ export interface GameState {
   log: LogLine[];
   journal: string[];
   loreKnown?: string[]; // ids of lore facts the player has heard
+  rollMode?: 'you' | 'auto'; // who rolls checks: the player (the app asks) or the game. The UI sets it.
+  pendingRoll?: PendingRoll | null; // a check waiting for the player's d20
   stats: { kills: number; knockouts: number; insults: number };
   props: Record<string, PropState[]>; // props the oracle added, or that changed (broken, taken)
   lastObject: string | null;

@@ -337,3 +337,15 @@ svg text { fill: var(--die-ink); font-family: var(--display), Georgia, serif; fo
 .update-banner .ub-go { background: var(--accent); border: 1px solid var(--accent); color: var(--bg); }
 .update-banner .ub-later { background: none; border: 1px solid var(--line); color: var(--soft); }
 @keyframes ub-in { from { transform: translateY(-20px); opacity: 0; } }
+
+/* checks waiting on the player's die */
+.l.ask { margin: 10px 0 8px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 10px; background: color-mix(in srgb, var(--gold) 10%, transparent); color: var(--ink); font-weight: 600; }
+.l.ask.done { opacity: .55; border-style: dashed; }
+.l.ask .ask-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-weight: 400; }
+.l.ask .ask-btn { min-height: 38px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line, #555); background: var(--bg2); color: var(--ink); font: inherit; font-size: .92em; cursor: pointer; }
+.l.ask .ask-btn.primary { background: var(--gold); color: #1a1209; border-color: var(--gold); font-weight: 700; }
+.l.ask .ask-btn.ghost { background: transparent; }
+.l.ask.done .ask-row { display: none; }
+.actbtn.roll { background: var(--gold); color: #1a1209; border-color: var(--gold); font-weight: 700; }
+.dt-check-h { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--gold); color: #1a1209; font-weight: 700; }
+.dt-check-h span { font-weight: 400; font-size: .85em; }

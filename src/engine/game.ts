@@ -2,9 +2,9 @@
 import type { Ctx, Npc, Room } from '../content/types';
 import { ROOMS, TRAVEL, bindGreet, checkChapelDone } from '../content/world';
 import { NPCS, MENU, maybeLevel } from '../content/npcs';
-import { d20, die, fmtMod, pick, roll, combineAdv, type Rng } from './dice';
+import { d20, die, fmtMod, pick, roll, combineAdv, type Rng, type Adv, type D20 } from './dice';
 import { ITEMS, MONSTERS, SPELLS, XP_FOR_LEVEL, FEATS } from './srd';
-import type { Ability, CreationSpec, GameState, LogLine, NpcMemory, Skill } from './types';
+import type { Ability, CreationSpec, GameState, LogLine, NpcMemory, Skill, RollAsk } from './types';
 import { ABILITIES } from './types';
 import {
   addItem, am, armorClass, cls, createFromSpec, chooseSubclass, fmtMoney, itemName, species as speciesOf, hasItem, prof, removeItem, saveBonus, skillBonus,
@@ -21,6 +21,9 @@ import * as World from '../world';
 import * as DM from './dm';
 import * as Campaigns from '../world/campaigns';
 import * as Lore from '../lore';
+import * as Mind from '../mind';
+import * as Attempts from './attempts';
+import { senses } from './senses';
 import { townOfRoom } from '../world/towns';
 import { next as rnd } from './dice';
 import type { CampaignSpec } from './types';
@@ -53,13 +56,14 @@ function makeCtx(s: GameState, lines: LogLine[]): Ctx {
     check: (skill, dc, o = {}) => skillCheck(c, skill, dc, o),
     abilityCheck: (a, dc, o = {}) => abilityCheck(c, a, dc, o),
     save: (a, dc) => {
-      const r = d20(s.rng).natural; const b = saveBonus(s.pc!, a); const tot = r + b;
+      const b = saveBonus(s.pc!, a);
+      const r = (s.combat ? d20(s.rng) : playerD20(c, 'none', { kind: 'save', label: `${a.toUpperCase()} saving throw`, bonus: b })).natural; const tot = r + b;
       push('roll', `🎲 ${a.toUpperCase()} save: ${r} ${fmtMod(b)} = ${tot} vs DC ${dc} — ${tot >= dc ? 'success' : 'fail'}`);
       return tot >= dc;
     },
     toolCheck: (dc) => {
       const pc = s.pc!; const b = am(pc, 'dex') + (hasItem(pc, 'thieves_tools') && (pc.cls === 'rogue' || pc.background === 'criminal') ? prof(pc) : 0);
-      const r = d20(s.rng).natural; const tot = r + b;
+      const r = playerD20(c, 'none', { kind: 'tool', label: 'Thieves\' tools', bonus: b }).natural; const tot = r + b;
       push('roll', `🎲 Thieves' tools: ${r} ${fmtMod(b)} = ${tot} vs DC ${dc} — ${tot >= dc ? 'success' : 'fail'}`);
       return tot >= dc;
     },
@@ -114,9 +118,9 @@ function skillCheck(c: Ctx, skill: Skill, dc: number, o: { adv?: boolean; dis?: 
   const recall = !!c.flag('recall_check');
   if (recall) c.set('recall_check', false);
   let adv = combineAdv(!!o.adv || recall, !!o.dis || (pc.drunk >= 4 && !['performance', 'intimidation'].includes(skill)));
-  let r = d20(c.rng, adv);
-  if (r.natural === 1 && speciesOf(pc).flags?.includes('luck')) r = d20(c.rng);
   const b = skillBonus(pc, skill);
+  let r = o.quiet ? d20(c.rng, adv) : playerD20(c, adv, { kind: 'skill', label: cap(skill), bonus: b });
+  if (r.natural === 1 && speciesOf(pc).flags?.includes('luck')) { c.out('roll', '🍀 Lucky: a natural 1, rerolled.'); r = d20(c.rng); }
   let g = 0;
   if (c.flag('guidance')) { g += die(c.rng, 4); c.set('guidance', false); }
   if (c.flag('past_life_check')) { g += die(c.rng, 6); c.set('past_life_check', false); }
@@ -141,12 +145,53 @@ function skillCheck(c: Ctx, skill: Skill, dc: number, o: { adv?: boolean; dis?: 
 }
 
 function abilityCheck(c: Ctx, a: Ability, dc: number, o: { adv?: boolean }) {
-  const r = d20(c.rng, o.adv ? 'adv' : 'none').natural; const b = am(c.pc, a); const tot = r + b;
+  const b = am(c.pc, a);
+  const r = playerD20(c, o.adv ? 'adv' : 'none', { kind: 'ability', label: `${a.toUpperCase()}`, bonus: b }).natural; const tot = r + b;
   c.out('roll', `🎲 ${a.toUpperCase()} check: ${r} ${fmtMod(b)} = ${tot} vs DC ${dc}`);
   return tot >= dc;
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ---------- the player's own dice ----------
+/** Thrown when a check needs the player's roll. The action is undone and asked again once they roll. */
+class NeedRoll { constructor(public ask: RollAsk) {} }
+let ROLL_YOU = false;
+let ROLLQ: number[][] = [];
+/** A d20 for a check: from the player's dice when they roll their own, otherwise from the game. */
+function playerD20(c: Ctx, adv: Adv, ask: Omit<RollAsk, 'adv'>): D20 {
+  if (!ROLL_YOU) return d20(c.rng, adv);
+  const given = ROLLQ.shift();
+  if (!given) throw new NeedRoll({ ...ask, adv });
+  const rolls = given.slice(0, adv === 'none' ? 1 : 2);
+  const natural = rolls.length === 1 ? rolls[0] : adv === 'dis' ? Math.min(...rolls) : Math.max(...rolls);
+  return { natural, rolls, adv };
+}
+
+/** What the player typed while a roll is waiting: their numbers, "roll" (the game rolls), or "cancel". */
+export function rollResponse(raw: string, ask: RollAsk): number[] | 'auto' | 'cancel' | 'bad' | null {
+  const t = raw.toLowerCase().trim().replace(/[.!]+$/, '');
+  if (/^(cancel|never ?mind|nevermind|forget it|no|nope|don'?t|back out|abort|stop|wait,? no)\b/.test(t)) return 'cancel';
+  const nat = t.match(/\bnat(?:ural)?\s*(\d{1,2})\b/);
+  const nums = nat ? [Number(nat[1])] : /^(?:\/?r(?:oll(?:ed)?)?\s*|i\s+(?:rolled|got|roll)\s*(?:an?\s+)?|got\s+(?:an?\s+)?|it'?s\s+(?:an?\s+)?)?(\d{1,2})(?:\s*(?:,|and|&|\/|\s)\s*(\d{1,2}))?$/.test(t)
+    ? (t.match(/\d{1,2}/g) ?? []).map(Number) : [];
+  if (nums.length) return nums.every((n) => n >= 1 && n <= 20) ? nums.slice(0, ask.adv === 'none' ? 1 : 2) : 'bad';
+  if (/^(\/?r|\/?roll|roll it|roll (?:the |a |my )?(?:dice|die|d20)|roll for (?:it|me)|i roll|🎲|go|go on|ok|okay|sure|yes|yep|do it|let'?s roll|throw|throw the dice|tap)$/.test(t)) return 'auto';
+  return null;
+}
+
+function restoreState(s: GameState, snap: string) {
+  const o = JSON.parse(snap) as GameState;
+  for (const k of Object.keys(s)) delete (s as unknown as Record<string, unknown>)[k];
+  Object.assign(s, o);
+}
+
+function askLine(c: Ctx, ask: RollAsk) {
+  const advTxt = ask.adv === 'adv' ? ' with advantage (roll two, keep the higher)' : ask.adv === 'dis' ? ' with disadvantage (roll two, keep the lower)' : '';
+  c.out('ask', `🎲 Roll ${/^[AEIOU]/.test(ask.label) ? 'an' : 'a'} ${ask.label}${ask.kind === 'skill' ? ' check' : ask.kind === 'ability' ? ' check' : ''}: d20 ${fmtMod(ask.bonus)}${advTxt}.`);
+  if (!c.flag('roll_hint')) { c.set('roll_hint'); c.sys('(Tap Roll, or type what your own die shows, like "14". Say "cancel" to back out. You can switch to automatic rolls in Settings.)'); }
+}
+
 
 // ---------- time ----------
 function advanceTime(c: Ctx, m: number) {
@@ -376,10 +421,10 @@ function listTopics(c: Ctx, np: Npc) {
   if (ts.length) c.sys(`Ask ${np.name} about: ${ts.map((t) => t.keys[0]).join(', ')}.`);
 }
 
-function answerTopic(c: Ctx, np: Npc, text: string): boolean {
+/** The hand-written topic that best matches what was said, if any. */
+function bestTopic(c: Ctx, np: Npc, text: string): { score: number; key: string; topic: Npc['topics'][number] } | null {
   const t = text.toLowerCase();
-  if (np.id === 'squib' && c.npc('squib').banned) { c.narr('Squib doesn\'t answer.'); return true; }
-  let best: { score: number; key: string; topic: typeof np.topics[number] } | null = null;
+  let best: { score: number; key: string; topic: Npc['topics'][number] } | null = null;
   for (const tp of np.topics) {
     if (tp.when && !tp.when(c)) continue;
     for (const k of tp.keys) {
@@ -387,6 +432,13 @@ function answerTopic(c: Ctx, np: Npc, text: string): boolean {
       if (re.test(t)) { const sc = k.length; if (!best || sc > best.score) best = { score: sc, key: k.toLowerCase(), topic: tp }; }
     }
   }
+  return best;
+}
+
+function answerTopic(c: Ctx, np: Npc, text: string): boolean {
+  const t = text.toLowerCase();
+  if (np.id === 'squib' && c.npc('squib').banned) { c.narr('Squib doesn\'t answer.'); return true; }
+  const best = bestTopic(c, np, t);
   // The lore brain answers when you name something more specifically than any scripted line does.
   const lt = Lore.topicOf(text, (c.flag('lore_focus') as string) || null);
   const handWritten = !/_keeper$|_merchant$|_watch$|^x:|^hire_/.test(np.id);
@@ -477,7 +529,12 @@ function say(c: Ctx, text: string, to?: string) {
   c.s.talkingTo = np.id;
   const mem = c.npc(np.id);
   const greeting = /^(hello|hi|hey|hiya|howdy|greetings|good (morning|evening|afternoon|day)|yo|sup|what'?s up|evening|morning|oi|ahoy)\b/i.test(text.trim());
+  if (np.id === 'squib' && mem.banned) { answerTopic(c, np, text); return; }
+  Mind.beat(c, W, np);
   if (!mem.met || greeting) { np.greet(c); mem.met = true; if (greeting && text.trim().split(/\s+/).length <= 3) { listTopics(c, np); return; } }
+  const bt = bestTopic(c, np, text);
+  const handWritten = !/_keeper$|_merchant$|_watch$|^x:|^hire_/.test(np.id);
+  if (Mind.respond(c, W, np, text, { scripted: handWritten && !!bt && !GENERIC_KEYS.has(bt.key) })) return;
   answerTopic(c, np, text);
 }
 
@@ -976,12 +1033,58 @@ export function handle(s: GameState, input: string): LogLine[] {
     return lines;
   }
   if (!raw) return lines;
+  // a check is waiting on the player's die
+  const p = s.pendingRoll;
+  if (p) {
+    const r = rollResponse(raw, p.ask);
+    if (r === 'bad') { c.out('you', raw); c.sys('A d20 only goes from 1 to 20. What did it show?'); return lines; }
+    if (r) {
+      s.pendingRoll = null;
+      c.out('you', raw);
+      if (r === 'cancel') { c.narr(pick(c.rng, ['You think better of it.', 'You let it go. Another time.', 'On second thoughts, no.'])); return lines; }
+      const mine = r === 'auto' ? autoRoll(s, p.ask) : r;
+      return execute(c, lines, p.input, [...p.rolls, mine]);
+    }
+    s.pendingRoll = null;
+    c.sys(`(You let the ${p.ask.label} roll go.)`);
+  }
   c.out('you', raw);
+  return execute(c, lines, raw, []);
+}
+
+/** The game rolls for the player (they said "roll"): its own dice, apart from the story's. */
+function autoRoll(s: GameState, ask: RollAsk): number[] {
+  const r: Rng = { state: (s.rng.state ^ 0x5bd1e995 ^ (s.minutes * 2654435761)) >>> 0 };
+  const n = ask.adv === 'none' ? 1 : 2;
+  return Array.from({ length: n }, () => die(r, 20));
+}
+
+/** Run what the player typed. If a check needs their die, undo it all and ask for the roll. */
+function execute(c: Ctx, lines: LogLine[], raw: string, rolls: number[][]): LogLine[] {
+  const s = c.s;
+  const you = s.rollMode === 'you';
+  const snap = you ? JSON.stringify(s) : '';
+  const keep = lines.length;
+  ROLL_YOU = you; ROLLQ = rolls.map((r) => [...r]);
+  try {
+    runParts(c, raw);
+  } catch (e) {
+    if (!(e instanceof NeedRoll)) throw e;
+    restoreState(s, snap);
+    lines.length = keep;
+    s.pendingRoll = { input: raw, rolls, ask: e.ask };
+    askLine(makeCtx(s, lines), e.ask);
+  } finally { ROLL_YOU = false; ROLLQ = []; }
+  return lines;
+}
+
+function runParts(c: Ctx, raw: string) {
+  const s = c.s;
   const parts = Act.splitCommands(raw);
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
     const wasCombat = !!s.combat;
-    const spellNames = [...s.pc.cantrips, ...s.pc.spells].flatMap((id) => SPELLS[id]?.aliases ?? []).filter((a) => a.length > 3 && a !== 'fire');
+    const spellNames = [...s.pc!.cantrips, ...s.pc!.spells].flatMap((id) => SPELLS[id]?.aliases ?? []).filter((a) => a.length > 3 && a !== 'fire');
     let intent = parse(part, spellNames);
     intent = withPronoun(c, intent);
     RAW = part;
@@ -989,13 +1092,14 @@ export function handle(s: GameState, input: string): LogLine[] {
     try {
       dispatch(c, intent, part);
     } catch (e) {
+      if (e instanceof NeedRoll) throw e;
       c.sys('Something went wrong in the game master\'s notes. (This is a bug — your game is safe.)');
       console.error(e);
       break;
     }
+    if (wasCombat && !s.combat) c.set('last_fight', `${s.loc}@${s.minutes}`);
     if (!!s.combat !== wasCombat && i < parts.length - 1) { c.sys('(Things changed. The rest of what you meant to do will have to wait.)'); break; }
   }
-  return lines;
 }
 
 /** "drink it", "throw that at him": fill pronouns from what you last handled. */
@@ -1033,6 +1137,32 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
     }
   }
   if (!s.combat && recall(c, raw)) return;
+  if (!s.combat) {
+    const low = raw.toLowerCase().trim().replace(/[.!?]+$/, '').replace(/^i\s+/, '');
+    if (/^(describe|survey|take in|look at|look over) (the |this )?(room|place|area|surroundings|scene|tavern|inn|square|street|clearing|hall)$|^(describe it|describe this|describe here|where am i|what does (this|the) (place|room) look like|what do i see|what can i see)$/.test(low)) { describe(c); return; }
+    if (/^(what time is it|what'?s the time|what day is it|time|check the time|what hour is it)$/.test(low)) { c.sys(`${clock(s)}. ${cap(c.timeOfDay())}. ${DM.weather(c).line}`); return; }
+    const sm = low.match(/^(?:what (?:can|do) i (hear|smell)|(listen|smell|sniff)(?: the air| around| carefully)?)$/);
+    if (sm) { senses(c, W, sm[1] === 'hear' || sm[2] === 'listen' ? 'hear' : 'smell'); return; }
+    if (/^(ask|call out to|shout to|go around asking) (around|the room|everyone|everybody|the crowd|the tavern|the bar|people|anyone|the patrons|the regulars)\b|^ask (if|whether) (anyone|anybody|someone|somebody)\b|^(ask|go) around\b/.test(low)) { Mind.askRoom(c, W, low, (r) => DM.spawnExtra(c, r), NPCS); return; }
+    if (/^(ask|order|i'?ll have|get) (for |about )?(the |a |your )?(house special|special|speciality|specialty|recommendation|chef'?s choice)\b/.test(low)) { const k = presentNpcs(c).find((id) => /_keeper$|^squib$/.test(id)); if (k) { say(c, 'what do you recommend?', NPCS[k].names[0]); return; } }
+    if (/^(rest|put up|prop up) my (feet|legs)\b|^(take a (load|weight) off|kick back|put my feet up)\b/.test(low)) { c.narr(`You put your feet up on the bench opposite and let your legs stop aching. ${Act.ambientHere(c, W)}`); c.advance(10); return; }
+    const cg = low.match(/^(watch|join|sit in on|play|deal me into|get in on) (the |a |some )?(card game|cards|game of cards|dice game|dice|game|hand of cards|round of cards)\b/);
+    if (cg && DM.crowdHere(s.loc) === 'tavern') {
+      const g = DM.spawnExtra(c, 'gambler');
+      if (g) {
+        if (cg[1] === 'watch') { c.narr(`${g.name} is running a game of Crowns and Candles at a corner table: three players, a pot of copper, and a lot of bluffing.`); if (c.check('insight', 13)) c.narr(`It takes you three hands to see it: ${g.name} is dealing from the bottom of the deck. Nobody else has noticed.`), c.set(`cheat_seen_${g.id}`); else c.narr('It looks like an honest game. Probably.'); return; }
+        if (c.pc.copper < 10) { c.say(g.id, `${g.name} looks at your purse and laughs. "Come back when you've got ten copper to lose."`); return; }
+        c.narr(`You put ten copper in the pot. ${g.name} deals.`);
+        const cheat = !!c.flag(`cheat_seen_${g.id}`);
+        if (cheat) { c.narr(`You catch ${g.name}'s wrist on the bottom deal and hold it up for the table to see.`); c.say(g.id, '"...Fine. Take it. Take it all."'); c.money(30); c.npc(g.id).disposition -= 3; return; }
+        const ok = c.check('insight', 13);
+        if (ok) { c.money(20); c.narr(`You read the table right. ${g.name} folds with a sour look. (+20 copper)`); } else { c.pay(10); c.narr(`${g.name} turns over a pair of crowns and scoops the pot. "Again?"`); }
+        return;
+      }
+    }
+    if (/^(challenge|ask) (someone|somebody|anyone|anybody|a patron|a stranger) to (an? )?arm[- ]?wrestl/.test(low)) { if (presentNpcs(c).includes('dwarves')) { say(c, 'arm wrestle', 'dwarves'); return; } const x = DM.spawnExtra(c, 'patron'); if (x) { const ok = c.check('athletics', 12); c.say(x.id, ok ? `${x.name} takes your hand, strains, and goes over with a thump. "Again!" Nobody lets them.` : `${x.name} grins, plants an elbow, and slams your hand flat. "Next!"`); if (ok) c.money(5); return; } }
+  }
+  if (Attempts.attempt(c, W, raw)) return;
   if (!s.combat && (DM.thought(c, W, raw) || DM.lookAround(c, W, raw) || DM.announce(c, W, raw) || DM.pastime(c, W, raw))) return;
   { const m = raw.match(/^(?:choose|become|follow|swear|take up|i choose)\s+(?:the\s+|a\s+|an\s+|to\s+)?(?:path of |college of |domain of |circle of |oath of |way of |school of )?(.+?)\s*(?:subclass)?$/i);
     if (m && c.pc.level >= 3 && !c.pc.subclass) { const r = chooseSubclass(c.pc, m[1]); if (typeof r !== 'string') { for (const l of r) c.good(l); return; } if (/^choose/i.test(raw)) { c.sys(r); return; } } }
@@ -1266,10 +1396,11 @@ function social(c: Ctx, skill: 'persuasion' | 'intimidation' | 'deception' | 'pe
   if (skill === 'intimidation' && /\b(money|coin|coins|till|purse|gold|cash|everything|hand (it )?over|valuables|wallet|pay up|give me)\b/.test(`${RAW} ${text}`.toLowerCase()) && Freedom.robbery(c, np)) return;
   if (np.social && np.social(c, skill, text)) return;
   if (np.id === 'merah' && skill === 'persuasion') { answerTopic(c, np, 'stop'); return; }
-  const ok = c.check(skill, 12);
-  const m = c.npc(np.id);
-  if (ok) { m.disposition += skill === 'intimidation' ? -1 : 1; c.narr(skill === 'intimidation' ? `${np.name} backs off a step. Point taken.` : `${np.name} warms to you.`); }
-  else { m.disposition -= 1; c.narr(`${np.name} isn't buying it.`); }
+  if (skill === 'intimidation') { const ok = c.check('intimidation', Mind.dcFor(c, np, 'intimidate')); Mind.intimidated(c, W, np, ok, `${RAW} ${text}`); return; }
+  if (skill === 'performance') { const ok = c.check('performance', 12); const m = c.npc(np.id); if (ok) m.disposition += 1; c.narr(ok ? `${np.name} ${pick(c.rng, ['laughs despite themselves.', 'claps, slowly, then properly.', 'is impressed, and shows it.'])}` : `${np.name} watches with polite pain.`); return; }
+  const goal = Mind.goalOf(`${RAW} ${text}`);
+  const dc = Mind.dcFor(c, np, 'persuade') + (goal === 'join' ? 6 : goal === 'drink' || goal === 'discount' ? 1 : goal === 'info' ? 2 : 0);
+  Mind.persuaded(c, W, np, skill, c.check(skill, dc), `${RAW} ${text}`);
 }
 
 function emote(c: Ctx, act: string, target?: string) {
@@ -1291,7 +1422,16 @@ function emote(c: Ctx, act: string, target?: string) {
     handshake: who ? `You shake ${who}'s hand.` : 'You shake hands with nobody.', kiss: who ? `${who} leans away, politely.` : 'You blow a kiss at nothing.', flirt: who ? `${who} raises an eyebrow.` : 'You wink at the scenery.', wink: 'You wink.', nod: 'You nod.', shrug: 'You shrug.', cheer: 'You cheer!', clap: 'You clap.', sing: 'You sing a few bars. Not bad.', flex: 'You flex. Impressive, in context.', salute: 'You salute.', sit: 'You sit down for a moment.',
   };
   if (!np && target && ['sit', 'dance', 'hug', 'pet', 'kiss', 'pray', 'cry', 'laugh', 'sing', 'bow', 'clap', 'cheer'].includes(act)) { if (Act.freeAction(c, W, RAW)) return; }
-  if (!np && target && !['sit', 'dance', 'hug', 'pet', 'kiss', 'pray', 'cry', 'laugh', 'sing', 'bow', 'clap', 'cheer'].includes(act) && !/^(the )?(room|crowd|everyone|everybody|all|air|sky|world)$/.test(target)) { c.narr(`There's nobody called "${target}" here.`); return; }
+  if (!np && target && !['sit', 'dance', 'hug', 'pet', 'kiss', 'pray', 'cry', 'laugh', 'sing', 'bow', 'clap', 'cheer'].includes(act) && !/^(the )?(room|crowd|everyone|everybody|all|air|sky|world)$/.test(target)) {
+    const thing = target.replace(/^(the|a|an|my|that|this|nearest|closest)\s+/, '');
+    if (!/\b(man|woman|guy|girl|boy|lady|gent|bloke|stranger|person|elf|orc|dwarf|goblin|him|her|them)\b/.test(thing)) {
+      const tb = /table|bar|crowd|room|corner/.test(thing);
+      c.narr(act === 'wave' && tb ? `You wave at the ${thing}. ${pick(c.rng, ['A couple of people wave back, uncertainly.', 'Someone raises a mug at you.', 'Nobody\'s sure who you mean.'])}` : act === 'spit' ? (c.s.loc === 'tavern' ? `You spit on the ${thing}. Squib looks at the spit, then at you, then hands you a rag.` : `You spit on the ${thing}.`) : `You ${act} at the ${thing}.`);
+      if (act === 'spit' && c.s.loc === 'tavern') c.npc('squib').disposition -= 1;
+      return;
+    }
+    c.narr(`There's nobody called "${target}" here.`); return;
+  }
   if (act === 'backflip') { c.narr(c.abilityCheck('dex', 12) ? 'You land the backflip clean. Somebody whistles.' : 'You attempt a backflip and land on your back. Somebody whistles anyway.'); return; }
   const base = lines[act] ?? `You ${act}.`;
   c.narr(np ? base : `${base} ${DM.aftermath(c, W, ['cry'].includes(act) ? 'tender' : ['spit', 'vomit', 'fart', 'burp', 'cheer', 'laugh'].includes(act) ? 'loud' : ['flex', 'salute', 'bow', 'dance', 'wink', 'flirt', 'kiss'].includes(act) ? 'odd' : 'mundane')}`);
@@ -1558,6 +1698,8 @@ export { ROOMS, NPCS };
 export function peek(s: GameState, cmd: 'sheet' | 'inventory' | 'journal' | 'look'): LogLine[] {
   const copy: GameState = JSON.parse(JSON.stringify(s));
   copy.log = [];
+  copy.rollMode = 'auto';
+  copy.pendingRoll = null;
   const lines = handle(copy, cmd);
   return lines.filter((l) => l.k !== 'you');
 }

@@ -57,7 +57,7 @@ export const MORE_FACTS: Fact[] = [
   F('m_ck1', 'copper_kettle', 'The Copper Kettle is the sit-down restaurant in Brumandell: roasts and pies, and slightly overpriced.', 'local:brumandell'),
   F('m_ck2', 'copper_kettle', 'Merchants take each other to the Copper Kettle to make a deal look respectable.', 'trade:merchant'),
   F('m_nb1', 'nine_bells', 'The Nine Bells is Brumandell\'s cheap eatery: louder, open late, and named for something nobody can explain.', 'local:brumandell'),
-  F('m_nb2', 'nine_bells,bells', 'There are no bells at the Nine Bells. Ask why and you get nine different answers.', 'local:brumandell', { rumour: true }),
+  F('m_nb2', 'nine_bells', 'There are no bells at the Nine Bells. Ask why and you get nine different answers.', 'local:brumandell', { rumour: true }),
   F('m_vh2', 'velvet_hour,thimbleton', 'Half of Lord Thimbleton\'s guards spend their wages at the Velvet Hour. The other half spend them at Grog\'s.', 'local:brumandell', { rumour: true }),
   F('m_po2', 'po,pos_potions', 'Po sells tonics and acids out front. Ask her nicely and quietly about hushmilk, and she\'ll look you over first.', 'local:brumandell'),
   F('m_po3', 'pos_potions,frostpetal', 'Po\'s Potions keeps a little Frostpetal for customers who know to ask. Thimbleton pretends not to know.', 'local:brumandell', { rumour: true }),

@@ -113,7 +113,7 @@ const squib: Npc = {
       else c.say('squib', '"No." He doesn\'t raise his voice. He doesn\'t need to.');
       return true;
     }
-    if (skill === 'intimidation') { c.narr('Squib looks at you the way a mountain looks at weather.'); c.npc('squib').disposition -= 1; return true; }
+    if (skill === 'intimidation') { const ok = c.check('intimidation', 20); c.npc('squib').disposition -= 1; c.narr(ok ? 'Squib\'s eyebrows go up a fraction of an inch. "Huh." He considers you, the way you\'d consider a dog that just growled at a bear. "Bold. Don\'t do it again." Somehow that sounds like respect.' : 'Squib looks at you the way a mountain looks at weather.'); return true; }
     return false;
   },
   shop: [{ id: 'ale', price: 5 }, { id: 'stew', price: 5 }, { id: 'meat_pie', price: 8 }, { id: 'roast_chicken', price: 25 }, { id: 'trenchfire', price: 5 }, { id: 'room_floor', price: 5 }, { id: 'room_private', price: 50 }],

@@ -12,6 +12,7 @@ import { ITEMS } from './srd';
 import { TOWNS, townById, POIS } from '../world/atlas';
 import { townOfRoom } from '../world/towns';
 import { matchDestination, route, locName, syncAt } from '../world';
+import * as Mind from '../mind';
 
 const R = (seed: number): Rng => ({ state: seed >>> 0 });
 const hash = (s: string) => { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
@@ -297,7 +298,8 @@ export function smalltalk(c: Ctx, w: World, np: Npc, text: string) {
   if (/\b(sorry|apologi[sz]e)\b/.test(t)) { say(q(pick(c.rng, ['Forget it.', 'Water under the bridge.', 'Hm. Don\'t do it again.']))); if (mem.disposition < 0) mem.disposition += 1; return; }
   if (/^(yes|yeah|yep|aye|sure|ok|okay|alright|fine|no|nope|nah)\b/.test(t)) { say(pick(c.rng, [`${pick(c.rng, v.think)} "Right."`, '"Glad we agree."', '"If you say so."'])); return; }
   if (/\b(sad|tired|scared|afraid|lonely|lost|hurt|miss)\b/.test(t)) { say(`${pick(c.rng, ['Their face softens.', 'They lower their voice.'])} "${pick(c.rng, ['We all are, these days.', 'Sit a while. Nobody\'s chasing you in here.', 'It gets easier. That\'s what they tell me, anyway.'])}"`); return; }
-  say(`${pick(c.rng, v.think)} "${pick(c.rng, ['Is that right.', 'Huh. Go on.', 'Can\'t say I\'d thought about it.', 'Well. Takes all sorts.', 'You don\'t say.', 'And what do you want me to do about that?'])}"`);
+  if (Mind.fallback(c, w, np, text)) return;
+  say(`${pick(c.rng, v.think)} "${pick(c.rng, ['Is that right.', 'Huh. Go on.', 'Can\'t say I\'d thought about it.'])}"`);
 }
 
 function backstory(c: Ctx, np: Npc): string {

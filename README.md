@@ -9,6 +9,16 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.7: your dice, and people who react
+
+- **You roll your own checks.** When something you try needs a check, the game stops and asks: "Roll a Deception check: d20 +3." Tap **Roll** to throw it on the dice tray, or type what your own d20 shows ("14", "nat 20", "9 and 15" with advantage). Say "cancel" to back out. Nothing happens to the world until you roll. Settings → *Skill checks and saves* switches back to automatic rolls.
+- **More things call for a roll.** Picking pockets, lifting things off a counter, reading someone ("is he lying?", "I read her body language"), intimidating people, snooping at letters, searching for hidden doors and traps, first aid, calming animals, card games, arm-wrestling strangers. Each has real results: coin, a free drink, a secret, or getting caught.
+- **People have minds.** Everyone has a temperament, a life story, things they want and fear, and opinions about the queen, the orcs, the cult, the war, guns and every town. Named folk are written by hand; everyone else is grown from a seed, so they give the same answers every time.
+- **They remember what you tell them.** Your name, where you're from, that you fought at Greymarch, that you lost someone. They use it, ask follow-up questions, and catch you out ("I silenced the bell." "Funny. I heard it ring last night.").
+- **They notice what's happening.** Blood on your clothes, the fight that just happened, the skeleton you walk in with, how drunk you are, how late it is, how you've treated them. Insult someone and their answers get short.
+- **Ask the room.** "I ask around about the bells" gets several people answering in their own way. "What can I hear?", "what can I smell?" and "what time is it?" work too.
+- **Fixes.** You can now talk to town innkeepers by name ("talk to Grog"). "Thanks for your help" and "sorry" reach the person you're talking to.
+
 ## What's new in v0.6: the lore brain
 
 - **People know the world.** Ask anyone about any place, person, faction, god, vice or bit of history in Lahti and they answer from a library of 520+ written facts drawn from the setting: towns, landmarks, the war, the treaty, the bells, the cult, the old faith and more.
@@ -112,6 +122,7 @@ npm run build    # production build in dist/
 | `src/nlp/` | Intent parser, verb lexicon, profanity speech-act classifier, and narration grammar |
 | `src/content/` | The world: rooms, NPCs, encounters and travel tables for Act One |
 | `src/lore/` | The lore brain: entities, facts, who knows what, and how people answer |
+| `src/mind/` | NPC minds: personas, opinions, memory of what you said, and reactions |
 | `src/ui/` | Phone-first interface and the save layer |
 | `tests/` | Unit tests, plus headless playthroughs that finish Act One with 8 different characters |
 

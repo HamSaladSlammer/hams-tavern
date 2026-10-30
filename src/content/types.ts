@@ -7,7 +7,7 @@ export interface Ctx {
   s: GameState;
   rng: Rng;
   pc: Character;
-  out(k: 'narr' | 'say' | 'you' | 'roll' | 'sys' | 'hit' | 'miss' | 'good' | 'bad' | 'title', t: string, who?: string): void;
+  out(k: 'narr' | 'say' | 'you' | 'roll' | 'sys' | 'hit' | 'miss' | 'good' | 'bad' | 'title' | 'ask', t: string, who?: string): void;
   narr(t: string): void;
   say(npcId: string, t: string): void;
   sys(t: string): void;

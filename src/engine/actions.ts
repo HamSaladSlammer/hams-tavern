@@ -1,6 +1,7 @@
 // "Try anything." When the player does something the story scripts don't cover, this module
 // works out what they're doing, what they're doing it to, whether that thing exists (the oracle
 // decides), which skill it takes, and what happens. It also owns drinking, eating and props.
+import { ambientLine } from './senses';
 import type { Ctx, Npc, Feature } from '../content/types';
 import { ROOMS } from '../content/world';
 import { aftermath } from './dm';
@@ -283,8 +284,8 @@ const RULES: Rule[] = [
     const nm = p ? propName(p) : obj;
     if (/stand|get up/.test(c.flag('raw_low') as string)) { c.narr('You get to your feet.'); return; }
     if (p && /^(bar|counter|bar top)$/.test(nm) && /sit|perch/.test(c.flag('raw_low') as string)) { c.narr('You hop up onto the bar. Squib looks at you until you hop back down.'); return; }
-    if (p || obj) { c.narr(`${sentence(c.flag('raw') as string)} ${pick(c.rng, ['It\'s good to be off your feet.', 'You take a moment.', 'Nobody minds.', 'For a moment, everything is fine.'])}`); return; }
-    c.narr(sentence(c.flag('raw') as string) + ' ' + pick(c.rng, ['It\'s good to be off your feet.', 'You take a moment.']));
+    if (p || obj) { c.narr(`${sentence(c.flag('raw') as string)} ${ambientLine(c, w)}`); return; }
+    c.narr(sentence(c.flag('raw') as string) + ' ' + ambientLine(c, w));
   } },
   { re: /^(climb down|get down|jump down|hop down|come down)\b/, run: (c) => { c.set('perched', ''); c.narr('You drop back down to the ground.'); } },
   { re: /^(climb|scale|clamber|shimmy|scramble up|climb up|climb onto|climb on|get on|get onto|stand on|hop onto|jump onto)\b/, skill: 'athletics', needObj: true, dc: (c, o, p) => (/rafter|palisade|wall|tower|cliff|roof|dome/.test(o) ? 13 : /tree/.test(o) ? 10 : /table|bar|cart|stool|chair|bench|pew|crate|barrel|rock|boulder/.test(o) ? 5 : 11),
@@ -721,3 +722,5 @@ export function splitCommands(raw: string): string[] {
 }
 
 export function propDef(loc: string, id: string): PropDef | undefined { return (ROOM_PROPS[loc] ?? []).find((p) => p.id === id); }
+
+export function ambientHere(c: Ctx, w: World): string { return ambientLine(c, w); }

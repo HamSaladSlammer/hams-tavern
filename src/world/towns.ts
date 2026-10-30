@@ -65,7 +65,8 @@ function townPeople(t: Loc) {
 const sizeWord = (t: Loc) => (t.kind === 'capital' ? 'a capital' : t.kind === 'city' ? 'a city' : t.kind === 'town' ? 'a town' : 'a village');
 
 function makeNpc(id: string, name: string, short: string, look: string, greet: string[], topics: Npc['topics'], extra: Partial<Npc> = {}): Npc {
-  return { id, name, names: [name.toLowerCase(), name.split(' ')[0].toLowerCase(), ...(extra.names ?? [])], short, look: () => look, greet: (c) => c.say(id, pick(c.rng, greet)), topics, unknown: ['"Couldn\'t tell you."', '"Not my business, friend."', 'They shrug.'], fightAs: 'militia', ...extra } as Npc;
+  const names = [name.toLowerCase(), name.split(' ')[0].toLowerCase(), name.split(' ').slice(-1)[0].toLowerCase(), ...(extra.names ?? [])];
+  return { id, name, short, look: () => look, greet: (c) => c.say(id, pick(c.rng, greet)), topics, unknown: ['"Couldn\'t tell you."', '"Not my business, friend."', 'They shrug.'], fightAs: 'militia', ...extra, names: Array.from(new Set(names)) } as Npc;
 }
 
 export function ensureTown(id: string) {

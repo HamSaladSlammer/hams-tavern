@@ -29,7 +29,7 @@ export function score(c: EvalCase): Score {
   const body = lines.filter((l) => l.k !== 'roll').map((l) => l.t).join(' ');
   const generic = GENERIC.test(body) && body.split(/\s+/).length < 30;
   const inp = c.input.toLowerCase();
-  const relevant = c.expect ? c.expect.some((w) => !inp.includes(w.toLowerCase()) && body.toLowerCase().includes(w.toLowerCase())) : null;
+  const relevant = c.roll ? lines.some((l) => l.k === 'roll' && l.t.toLowerCase().includes(`🎲 ${c.roll}`)) : c.expect ? c.expect.some((w) => !inp.includes(w.toLowerCase()) && body.toLowerCase().includes(w.toLowerCase())) : null;
   return { id: c.id, cat: c.cat, input: c.input, out: text.slice(0, 400), error: /a bug|undefined|NaN|\[object/.test(text), echo, generic, relevant, words: body.split(/\s+/).filter(Boolean).length };
 }
 

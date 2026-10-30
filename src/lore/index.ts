@@ -131,7 +131,7 @@ export interface LoreCtx {
 const pickR = <T,>(r: () => number, a: T[]): T => a[Math.floor(r() * a.length) % a.length];
 const LOWER_OK = /^(The|A|An|There|Some|Someone|Somebody|Every|Everyone|Nobody|People|Folk|In|On|At|Most|Any|All|One|Two|If|When|During|Before|After|This|It)\b/;
 const PROPER = new Set(ENTITIES.flatMap((e) => e.name.replace(/^the /i, '').split(/\s+/)).filter((w) => /^[A-Z]/.test(w)).concat(['I', 'Queen', 'King', 'Lord', 'Old', 'Mother', 'Master', 'Lahti', 'Elisiah', 'Grolgar']));
-const softStart = (t: string) => { const w = t.split(/[\s,:'’]/)[0]; return LOWER_OK.test(t) || !PROPER.has(w) ? t[0].toLowerCase() + t.slice(1) : t; };
+export const softStart = (t: string) => { const w = t.split(/[\s,:'’]/)[0]; return LOWER_OK.test(t) || !PROPER.has(w) ? t[0].toLowerCase() + t.slice(1) : t; };
 
 function compass(from: { x: number; y: number }, to: { x: number; y: number }) {
   const dx = (to.x - from.x) * 2000, dy = (to.y - from.y) * 1500;
