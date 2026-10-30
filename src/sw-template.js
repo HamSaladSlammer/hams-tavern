@@ -9,7 +9,9 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const u = new URL(req.url);
+  if (req.method !== 'GET' || u.origin !== location.origin) return;
+  if (/version\.json$|\.zip$|\.apk$/.test(u.pathname)) return; // always from the network
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }

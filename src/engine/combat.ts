@@ -6,7 +6,7 @@ import { d20, die, fmtMod, mod, pick, roll, combineAdv, type Adv } from './dice'
 import { MONSTERS, SPELLS, ITEMS, UNARMED, WEAPONS } from './srd';
 import type { Combatant, Condition, MonsterDef, WeaponDef, DamageType } from './types';
 import {
-  am, armorClass, attackAbility, hasItem, isProficient, prof, removeItem, addItem, saveBonus, spellAttack, spellDC, spellMod,
+  am, armorClass, hasFeat, attackAbility, hasItem, isProficient, prof, removeItem, addItem, saveBonus, spellAttack, spellDC, spellMod,
   weaponById, weaponDamageExpr, weaponToHit, initiativeBonus, species, variant, IMPROVISED, itemName,
 } from './character';
 import { expand, STRIKES, WEAPON_HITS, FLAVOR } from '../nlp/grammar';
@@ -129,10 +129,10 @@ export function startCombat(c: Ctx, encIdOrDef: string | EncounterDef) {
     if (u.isPc) bonus = initiativeBonus(pc);
     else if (u.companion) bonus = COMPANIONS[u.companion].dex;
     else bonus = mod(mdef(u)!.abilities.dex);
-    const adv: Adv = u.isPc && ((c.flag('yard_warned') && encId === 'yard') || pc.feat === 'watchful') ? 'adv' : 'none';
+    const adv: Adv = u.isPc && ((c.flag('yard_warned') && encId === 'yard') || hasFeat(pc, 'watchful')) ? 'adv' : 'none';
     u.init = d20(c.rng, adv).natural + bonus + (u.isPc ? 0.5 : u.side === 'party' ? 0.25 : 0);
   }
-  if (enc.ambush && pc.feat !== 'watchful') for (const u of units) if (u.side === 'foe') u.init += 10;
+  if (enc.ambush && !hasFeat(pc, 'watchful')) for (const u of units) if (u.side === 'foe') u.init += 10;
   units.sort((a, b) => b.init - a.init);
   const mapLoc = (c.flag('road_map') as string) || c.s.loc;
   placeUnits(c, units, enc, mapLoc);
@@ -731,8 +731,8 @@ function doAttack(c: Ctx, t: Combatant, w: WeaponDef, style: AttackStyle, verb: 
   let dtype: DamageType = w.dtype;
   if (isUnarmed && natural_wpn && !wild && (!lk || natural_wpn.verbs.some((v) => verb.includes(v)) || pc.cls !== 'monk')) dtype = natural_wpn.dtype;
   let dmg = roll(c.rng, expr, crit).total;
-  if (pc.feat === 'savage' && !c.s.combat!.sneakUsed && !isUnarmed) { const second = roll(c.rng, expr, crit).total; if (second > dmg) dmg = second; }
-  if (pc.feat === 'brawler' && (isUnarmed || improvisedHit) && dmg <= 1) dmg = roll(c.rng, expr, crit).total;
+  if (hasFeat(pc, 'savage') && !c.s.combat!.sneakUsed && !isUnarmed) { const second = roll(c.rng, expr, crit).total; if (second > dmg) dmg = second; }
+  if (hasFeat(pc, 'brawler') && (isUnarmed || improvisedHit) && dmg <= 1) dmg = roll(c.rng, expr, crit).total;
   if (pc.options.style === 'great' && w.twoHanded) dmg += 1;
   const extras: string[] = [];
   if (has(me, 'raging') && strMelee) { const rb = rageBonus(c); dmg += rb; extras.push(`+${rb} rage`); }
@@ -1387,8 +1387,9 @@ export function playerFlee(c: Ctx, cunning = false) {
 
 export function playerSpare(c: Ctx, targetName?: string) {
   if (!c.s.combat) { spareOutside(c); return; }
-  const t = c.s.combat.units.find((u) => has(u, 'surrendered')) ?? null;
+  const t = c.s.combat.units.find((u) => has(u, 'surrendered') && !has(u, 'fled') && !has(u, 'dead')) ?? null;
   if (!t) { c.sys('Nobody has surrendered.'); return; }
+  del(t, 'surrendered');
   add(t, 'fled');
   c.narr(t.monster === 'merah' ? 'You let her go. Merah stumbles down the stairs and out into the night without looking back.' : `${t.name} scrambles away.`);
   if (t.monster === 'merah') merahGone(c, false);
@@ -1609,7 +1610,7 @@ function victory(c: Ctx) {
   if (c.pc.conditions.includes('wildshape')) { c.pc.conditions = c.pc.conditions.filter((x) => x !== 'wildshape'); c.pc.wildHp = 0; c.narr('You let the wolf-shape go.'); }
   c.out('title', 'Victory');
   if (xp) c.xp(xp);
-  if (pelts) { c.give('wolf_pelt', pelts); c.narr(`You skin the wolf${pelts > 1 ? 'ves' : ''}. ${pelts} pelt${pelts > 1 ? 's' : ''} for Hetch. (The dead one isn't worth skinning.)`); }
+  if (pelts) { c.give('wolf_pelt', pelts); c.narr(`You skin the wolf${pelts > 1 ? 'ves' : ''}. ${pelts} pelt${pelts > 1 ? 's' : ''}${c.s.loc.startsWith('site:') || c.s.loc.startsWith('town:') ? ' to sell' : ' for Hetch'}. (The dead one isn't worth skinning.)`); }
   if (cb.encounterId === 'courier') courierLoot(c);
   if (merah) {
     if (has(merah, 'dead')) merahDead(c);
@@ -1623,6 +1624,8 @@ function victory(c: Ctx) {
 }
 
 export const lastFight: { units: Combatant[] } = { units: [] };
+let WAKE_FINDER: ((c: Ctx) => string | null) | null = null;
+export function bindWakeFinder(fn: (c: Ctx) => string | null) { WAKE_FINDER = fn; }
 
 function defeat(c: Ctx, why: 'down' | 'death' | 'surrender') {
   const pc = c.pc;
@@ -1635,10 +1638,11 @@ function defeat(c: Ctx, why: 'down' | 'death' | 'surrender') {
     enc.onLose(c);
     return;
   }
-  const to = (c.s.loc in WAKE) ? WAKE[c.s.loc] : 'breda_square';
+  const undeadWin = c.s.combat!.units.some((u) => u.side === 'foe' && !has(u, 'dead') && isUndead(u));
+  const to = (c.s.loc in WAKE) ? WAKE[c.s.loc] : WAKE_FINDER?.(c) ?? 'breda_square';
   c.s.combat = null;
   c.out('title', 'Darkness');
-  c.narr(why === 'death' ? 'You die. You are sure of it: the cold, the quiet, the long way down. And then a woman\'s voice, very kind, very far away: "Not yet, little candle. I need you to remember me."' : 'Everything goes dark.');
+  c.narr(why === 'death' ? (c.flag('not_bells') ? 'You die. You are sure of it: the cold, the quiet, the long way down. And then, rudely, breath. Lahti isn\'t finished with you.' : 'You die. You are sure of it: the cold, the quiet, the long way down. And then a woman\'s voice, very kind, very far away: "Not yet, little candle. I need you to remember me."') : 'Everything goes dark.');
   const h = c.hour();
   const toDawn = ((24 - h) + 6) % 24 || 24;
   c.advance(toDawn * 60);
@@ -1652,8 +1656,10 @@ function defeat(c: Ctx, why: 'down' | 'death' | 'surrender') {
   for (const id of c.s.companions) c.s.companionHp[id] = Math.max(1, Math.floor(COMPANIONS[id].maxHp / 2));
   c.s.chaos = Math.min(9, c.s.chaos + 1);
   c.s.loc = to; c.s.talkingTo = null; c.s.pos = null;
-  c.narr(`You wake at dawn${to === 'breda_square' ? ' at the edge of Breda' : to === 'kessels_rest' ? " at Kessel's Rest, curled under the dome of the old wayshrine" : ', on cold ground'}, aching, alive. ${lost || lostItem ? `Someone went through your pack while you were out${lost ? `: ${Math.round(lost / 100)} gold is gone` : ''}${lostItem ? `${lost ? ', and so is' : ': gone is'} your ${lostItem.toLowerCase()}` : ''}.` : ''} The dead didn't kill you. They wanted you to wake up and remember.`);
-  c.sys(`You have ${pc.hp}/${pc.maxHp} HP. (Undead in Lahti knock people down rather than kill them. Something wants witnesses.)`);
+  const where = to === 'breda_square' ? ' at the edge of Breda' : to === 'kessels_rest' ? " at Kessel's Rest, curled under the dome of the old wayshrine" : /^town:/.test(to) ? `, propped against a wall in ${ROOMS[to]?.region ?? 'town'}, where somebody kind dragged you` : ', on cold ground';
+  const robbed = lost || lostItem ? `Someone went through your pack while you were out${lost ? `: ${Math.round(lost / 100)} gold is gone` : ''}${lostItem ? `${lost ? ', and so is' : ': gone is'} your ${lostItem.toLowerCase()}` : ''}.` : '';
+  c.narr(`You wake at dawn${where}, aching, alive. ${robbed} ${undeadWin && !c.flag('not_bells') ? 'The dead didn\'t kill you. They wanted you to wake up and remember.' : pick(c.rng, ['Whoever beat you left you for dead, or for later.', 'You lost. You\'re still breathing. Those are both facts.', 'Lucky. Next time, maybe not.'])}`.replace(/\s+/g, ' ').trim());
+  c.sys(`You have ${pc.hp}/${pc.maxHp} HP. (Losing a fight in Hams Tavern costs you time, money and pride, not your character.)`);
 }
 
 export { addItem, isProficient, attackAbility, saveBonus };

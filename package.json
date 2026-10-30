@@ -1,6 +1,6 @@
 {
   "name": "hams-tavern",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Hams Tavern: The Bells of Lahti — a solo fantasy RPG with an offline game master.",
   "type": "module",
@@ -22,6 +22,7 @@
     "@capacitor/app": "^6.0.2",
     "@capacitor/core": "^6.2.0",
     "@capacitor/status-bar": "^6.0.2",
+    "@capgo/capacitor-updater": "6.3.18",
     "@fontsource/alegreya": "^5.1.0",
     "@fontsource/ibm-plex-mono": "^5.1.0",
     "@fontsource/im-fell-english": "^5.1.0"

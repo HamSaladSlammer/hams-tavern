@@ -3,12 +3,13 @@
 // decides), which skill it takes, and what happens. It also owns drinking, eating and props.
 import type { Ctx, Npc, Feature } from '../content/types';
 import { ROOMS } from '../content/world';
+import { aftermath } from './dm';
 import { ROOM_PROPS, PLAUSIBLE, roomKind, tagsFor, itemFor, type PropDef } from '../content/props';
 import { die, pick, roll } from './dice';
 import { askOracle, type Odds } from './oracle';
 import { ITEMS } from './srd';
 import type { Ability, PropState, Skill, Stack } from './types';
-import { hasItem, removeItem, addItem, am, prof, species, itemName } from './character';
+import { hasFeat, hasItem, removeItem, addItem, am, prof, species, itemName } from './character';
 
 export interface World {
   matchNpc(c: Ctx, name?: string): Npc | null;
@@ -494,7 +495,7 @@ const RULES: Rule[] = [
     c.narr(`You tie off the rope${obj ? ` to the ${obj}` : ''}. Good knot. Your old sergeant would approve.`);
   } },
   { re: /^(mend|repair|fix|patch|sew|darn)\b/, run: (c, w, obj) => {
-    const tools = hasItem(c.pc, 'smith_tools') || c.pc.feat === 'forgewise';
+    const tools = hasItem(c.pc, 'smith_tools') || hasFeat(c.pc, 'forgewise');
     const ok = c.check(tools ? 'investigation' : 'sleight of hand', tools ? 8 : 13);
     c.narr(ok ? `You fix the ${obj || 'thing'} up. It\'ll hold.` : `You make the ${obj || 'thing'} worse, then better, then about the same.`);
   } },
@@ -516,16 +517,16 @@ const RULES: Rule[] = [
   } },
   { re: /^(sing|hum|whistle|play (my |your |the )?(lute|music|a song|a tune)|serenade|recite|tell a joke|tell a story|do an impression|do a dance|dance with|perform)\b/, skill: 'performance', run: (c, w, obj, p, np, raw) => {
     const instrument = /lute/.test(raw) && hasItem(c.pc, 'lute');
-    const ok = c.check('performance', instrument ? 10 : 12, { adv: c.pc.feat === 'crowd_pleaser' && c.s.loc === 'tavern' });
+    const ok = c.check('performance', instrument ? 10 : 12, { adv: hasFeat(c.pc, 'crowd_pleaser') && c.s.loc === 'tavern' });
     const crowd = w.presentNpcs(c).filter((x) => x !== 'kettle').length;
     if (np && /serenade|dance with/.test(raw)) { c.narr(ok ? `${np.name} ${np.id === 'squib' ? 'pretends not to enjoy it, and fails' : 'laughs, and plays along'}.` : `${np.name} edges away.`); if (ok) c.npc(np.id).disposition += 1; return; }
     if (ok && /joke|story|impression|recite/.test(raw)) {
       c.narr(pick(c.rng, /joke/.test(raw) ? ['It lands. Borin laughs so hard ale comes out of his nose.', 'Even Squib\'s mouth twitches. That\'s a standing ovation, from him.', 'The punchline gets a roar. Someone makes you tell it again.'] : ['The room leans in. By the end, nobody is drinking.', 'You have them in the palm of your hand. Someone asks for another.']));
-      if (crowd && c.s.loc === 'tavern') { const cp = (c.pc.feat === 'crowd_pleaser' ? 20 : 5) + die(c.rng, 10); c.money(cp); c.good(`Coins land at your feet: ${cp} copper.`); }
+      if (crowd && c.s.loc === 'tavern') { const cp = (hasFeat(c.pc, 'crowd_pleaser') ? 20 : 5) + die(c.rng, 10); c.money(cp); c.good(`Coins land at your feet: ${cp} copper.`); }
     } else if (!ok && /joke|story|impression|recite/.test(raw)) c.narr(pick(c.rng, ['Silence. A cough. Somebody\'s chair creaks.', 'You forget the punchline halfway through.', 'Tokk laughs, alone, and then stops.']));
     else if (ok) {
       c.narr(pick(c.rng, ['The room goes quiet to listen, then joins in on the chorus.', 'By the second verse people are stamping along.', 'It\'s good. It\'s genuinely good. Someone wipes their eye and blames the smoke.']));
-      if (crowd && c.s.loc === 'tavern') { const cp = (c.pc.feat === 'crowd_pleaser' ? 20 : 5) + die(c.rng, 10); c.money(cp); c.good(`Coins land at your feet: ${cp} copper.`); }
+      if (crowd && c.s.loc === 'tavern') { const cp = (hasFeat(c.pc, 'crowd_pleaser') ? 20 : 5) + die(c.rng, 10); c.money(cp); c.good(`Coins land at your feet: ${cp} copper.`); }
     } else c.narr(pick(c.rng, ['A dog starts howling along. That\'s the best part.', 'Somebody throws a crust of bread. It\'s not a tip.', 'The silence afterwards has texture.']));
   } },
 ];
@@ -610,6 +611,7 @@ export function freeAction(c: Ctx, w: World, raw: string): boolean {
   const own = obj && !np ? w.matchInventory(c, obj) : null;
   const feat = obj && !np && !own ? w.matchFeature(c, obj) : null;
   let p: FoundProp | null = null;
+  if (obj && /'|\b(should|would|could|is|are|am|was|were|be|been|go|going|gonna|want|need|think|feel)\b/.test(obj)) { c.narr(sentence(raw) + ' ' + aftermath(c, w, 'mundane')); return true; }
   if (obj && !np && !own && !feat) p = findProp(c, obj, !!rule?.needObj || !rule);
   if (obj && !np && !own && !feat && !p && (rule?.needObj || !rule) && !LORE.some(([re]) => re.test(obj))) {
     // nothing like that here
@@ -646,7 +648,7 @@ export function freeAction(c: Ctx, w: World, raw: string): boolean {
       hetch: ['Hetch watches you with the patience of a cat who has outlived better.', 'Hetch flicks one ear. That\'s all you get.'],
       sereza: ['Sereza\'s mouth twitches. She writes something down.', 'Sereza looks at you as if pricing you.'],
     };
-    c.narr(sentence(raw) + ' ' + pick(c.rng, R[np.id] ?? [`${np.name} isn't sure what to make of that.`, `${np.name} gives you a long look.`]));
+    c.narr(sentence(raw) + ' ' + pick(c.rng, R[np.id] ?? [`${np.name} isn't sure what to make of that.`, `${np.name} gives you a long look.`, `${np.name} takes a half-step back. "Can I help you?"`, `${np.name} laughs, uncertain whether they're meant to.`]));
     return true;
   }
   if (sk) {
@@ -658,10 +660,7 @@ export function freeAction(c: Ctx, w: World, raw: string): boolean {
   }
   // nothing to roll and nothing to do it to: it simply happens, and the room reacts
   if (!obj && !p) {
-    const ppl = w.presentNpcs(c).filter((x) => x !== 'kettle' && x !== 'alistair');
-    const amb = c.s.loc === 'tavern' ? ['A couple of heads turn at the bar, then turn back.', 'One of the dwarves raises his mug to you.', 'Squib doesn\'t even look up.', 'Nobody minds. This is the Smoking Barrel.']
-      : ppl.length ? [`${w.npcName(ppl[0])} glances over.`, 'Nobody comments.', 'It gets a look or two.'] : c.hasCompanion('alistair') ? ['"Mood," says Alistair.', 'Alistair does it too, slightly worse.'] : c.hasCompanion('kettle') ? ['Kettle tilts his head at you.', 'Kettle wags, supportively.'] : ['Nobody\'s around to see.', 'The world carries on.', 'It feels good, honestly.'];
-    c.narr(sentence(raw) + ' ' + pick(c.rng, amb));
+    c.narr(sentence(raw) + ' ' + aftermath(c, w, /shout|yell|scream|sing|stomp|bang|slam|whistle|howl|roar/.test(low) ? 'loud' : /cry|weep|sigh|smile|hum/.test(low) ? 'tender' : 'odd'));
     return true;
   }
   // nothing to roll: let the oracle decide whether it simply works

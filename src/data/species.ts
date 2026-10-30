@@ -9,7 +9,7 @@ export interface SpeciesVariant { id: string; name: string; desc: string; resist
 export interface SpeciesDef {
   id: string;
   name: string;
-  group: 'Common folk' | 'Rare folk' | 'Strange folk';
+  group: 'Common folk' | 'Rare folk' | 'Strange folk' | 'Your own';
   size: 'Small' | 'Medium' | 'Small or Medium';
   speed: number;
   darkvision: number;
@@ -29,6 +29,13 @@ export interface SpeciesDef {
 }
 
 export const SPECIES: SpeciesDef[] = [
+  { id: 'custom_lineage', name: 'Custom Lineage', group: 'Your own', size: 'Small or Medium', speed: 30, darkvision: 0, blurb: 'Something the world has no name for yet: a mixed heritage, a strange birth, a people from beyond the Northern Ocean.',
+    lore: 'Kalashscovia is a crossroads. After the war, every kind of person ended up somewhere they didn\'t start. Describe yourself however you like.',
+    traits: ['Ability: +2 to one ability score of your choice (on top of your background).', 'Feat: one feat of your choice.', 'Variable trait: darkvision 60 ft, or proficiency in one skill of your choice.', 'Size: Small or Medium, your choice.'],
+    variantLabel: 'Variable trait', variants: [
+      { id: 'dv', name: 'Darkvision 60 ft', desc: 'You see in dim light as if it were bright, and in darkness as if it were dim, out to 60 feet.', darkvision: 60 },
+      { id: 'skill', name: 'A skill proficiency', desc: 'Proficiency in one skill of your choice.' },
+    ] },
   // ---------- Common folk (SRD 5.2.1) ----------
   { id: 'human', name: 'Human', group: 'Common folk', size: 'Medium', speed: 30, darkvision: 0, blurb: 'Everywhere in Kalashscovia, and stubborn about it.',
     lore: 'Humans farmed both sides of the front line and buried both sides\' dead. Nobody trusts them completely, which suits them.',

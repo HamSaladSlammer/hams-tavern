@@ -2,10 +2,13 @@ import './ui/styles.css';
 import { handle, newState, suggestions, statusLine, peek, migrate, beginGame, mapView } from './engine/game';
 import { BattleMap } from './ui/map';
 import { openForge } from './ui/forge';
+import { openCampaigns } from './ui/campaigns';
 import { WorldMap } from './ui/worldmap';
+import { DiceTray, DEFAULT_LOOK, d20Of, type DiceLook } from './ui/dice';
 import { worldView } from './world';
 import type { GameState, LogLine } from './engine/types';
 import { backend, SAVE_KEY, PREFS_KEY } from './ui/storage';
+import { checkForUpdates, nativeReady, BUILD } from './ui/updates';
 
 declare const __APP_VERSION__: string;
 const VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
@@ -18,7 +21,7 @@ let state: GameState = newState();
 const history: string[] = [];
 let histIdx = -1;
 
-interface Prefs { theme: 'dark' | 'light'; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; }
+interface Prefs { theme: 'dark' | 'light'; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; look?: DiceLook }
 let prefs: Prefs = { theme: 'dark', size: 'normal', dice: 'show', map: 'on' };
 try { prefs = { ...prefs, ...JSON.parse(backend.load(PREFS_KEY) ?? '{}') }; } catch { /* defaults */ }
 function applyPrefs() {
@@ -39,7 +42,10 @@ function lineEl(l: LogLine, fresh: boolean): HTMLElement {
   return p;
 }
 
+const tray = new DiceTray($('dicetray'), { ...DEFAULT_LOOK, ...(prefs.look ?? {}) }, (l) => { prefs.look = l; applyPrefs(); }, (txt) => { const l: LogLine = { k: 'roll', t: txt }; state.log.push(l); logEl.appendChild(lineEl(l, true)); requestAnimationFrame(() => { logEl.scrollTop = logEl.scrollHeight; }); save(); });
+
 function render(lines: LogLine[], fresh = true) {
+  if (fresh) { const d = lines.map((l) => (l.k === 'roll' ? d20Of(l.t) : null)).find(Boolean); if (d) tray.flash(d.value, d.outcome); }
   const frag = document.createDocumentFragment();
   for (const l of lines) if (l.t) frag.appendChild(lineEl(l, fresh));
   logEl.appendChild(frag);
@@ -109,6 +115,7 @@ function send(text: string) {
   const t = text.trim();
   if (!t) return;
   if (state.phase !== 'play') { startNew(); return; }
+  if (/^\/?(roll|r)\s+[\dd+\- ]+(adv|advantage|dis|disadvantage)?$/i.test(t) || /^\/(roll|r)$/i.test(t) || /^(dice|dice tray|open (the )?dice( tray)?)$/i.test(t)) { if (/^\/?(roll|r)\s/i.test(t)) { if (!tray.rollText(t)) toast('Try something like "roll 2d6+3" or "roll d20 adv".'); } else tray.open(); return; }
   if (/^(open (the )?(world )?map|world map|world|show (me )?the (world )?map|look at (the|my) map|check (the|my) map|atlas)$/i.test(t)) { openWorld(); return; }
   if (t) { history.unshift(t); history.length = Math.min(history.length, 50); }
   histIdx = -1;
@@ -169,13 +176,15 @@ function confirmNew(): boolean {
 }
 function startNew() {
   $('title').hidden = true;
-  openForge($('forge'), (spec) => {
-    state = newState((Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
-    logEl.innerHTML = '';
-    render([{ k: 'title', t: 'Hams Tavern: The Bells of Lahti' }]);
-    render(beginGame(state, spec));
-    save();
-    input.focus();
+  openCampaigns($('forge'), (choice, label) => {
+    openForge($('forge'), (spec) => {
+      state = newState((Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
+      logEl.innerHTML = '';
+      render([{ k: 'title', t: 'Hams Tavern' }]);
+      render(beginGame(state, spec, choice));
+      save();
+      input.focus();
+    }, () => startNew(), label);
   }, () => { $('title').hidden = false; });
 }
 
@@ -194,6 +203,7 @@ function openPanel(kind: string) {
 }
 document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => (b.onclick = () => {
   if (b.dataset.panel === 'world') { openWorld(); return; }
+  if (b.dataset.panel === 'dice') { tray.isOpen ? tray.close() : tray.open(); return; }
   if (b.dataset.panel === 'map') { prefs.map = mapEl.hidden ? 'on' : (state.combat ? 'off' : 'combat'); applyPrefs(); refreshMap(); return; }
   openPanel(b.dataset.panel!);
 }));
@@ -222,12 +232,13 @@ function menu(body: HTMLElement) {
   body.appendChild(opt('Text size', 'size', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']]));
   body.appendChild(opt('Dice rolls', 'dice', [['show', 'Show'], ['hide', 'Hide']]));
   body.appendChild(opt('Battle map', 'map', [['on', 'Always'], ['combat', 'In fights'], ['off', 'Off']]));
+  body.appendChild(menuButton('Check for updates', () => { panel.hidden = true; void checkForUpdates(toast, true); }));
   body.appendChild(menuButton('How to play', () => { panel.hidden = true; send('help'); }));
   body.appendChild(menuButton('Export save (for bug reports or another device)', exportSave));
   body.appendChild(menuButton('Import save', importSave));
   body.appendChild(menuButton('Switch character (save slots)', () => location.reload()));
   const about = document.createElement('div'); about.className = 'small';
-  about.innerHTML = `<p><b>Hams Tavern: The Bells of Lahti</b> v${VERSION}. A solo fantasy RPG with an offline game master. World and story © Jared ("HamSaladSlammer").</p>
+  about.innerHTML = `<p><b>Hams Tavern: The Bells of Lahti</b> v${VERSION}${BUILD ? ` (build ${BUILD})` : ''}. A solo fantasy RPG with an offline game master. World and story © Jared ("HamSaladSlammer").</p>
   <p>This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.</p>
   <p>Saves stay on this device. Nothing is sent anywhere.</p>`;
   body.appendChild(about);
@@ -277,8 +288,10 @@ if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:')
 }
 
 refresh();
+window.setTimeout(() => { if (navigator.onLine !== false) void checkForUpdates(toast); }, 4000);
 
 async function setupNative() {
+  void nativeReady();
   try {
     const { StatusBar, Style } = await import('@capacitor/status-bar');
     await StatusBar.setBackgroundColor({ color: prefs.theme === 'light' ? '#dfd2b4' : '#17120d' });
@@ -289,6 +302,7 @@ async function setupNative() {
     App.addListener('backButton', () => {
       if (!panel.hidden) { panel.hidden = true; return; }
       if (world.isOpen) { world.close(); return; }
+      if (tray.isOpen) { tray.close(); return; }
       if (!$('forge').hidden) { $('forge').hidden = true; $('title').hidden = false; return; }
       App.minimizeApp();
     });

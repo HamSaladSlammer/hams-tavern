@@ -8,7 +8,7 @@ import type { Ability, CreationSpec, GameState, LogLine, NpcMemory, Skill } from
 import { ABILITIES } from './types';
 import {
   addItem, am, armorClass, cls, createFromSpec, chooseSubclass, fmtMoney, itemName, species as speciesOf, hasItem, prof, removeItem, saveBonus, skillBonus,
-  spellAttack, spellDC, weaponById, weaponDamageExpr, weaponToHit, xpToNext, species as spOf, background as bgOf, rollHitDie,
+  spellAttack, spellDC, weaponById, weaponDamageExpr, weaponToHit, xpToNext, species as spOf, background as bgOf, rollHitDie, levelUp as levelUpChar,
 } from './character';
 import { parse, type Intent } from '../nlp/parse';
 import { classifySpeech } from '../nlp/profanity';
@@ -18,6 +18,9 @@ import * as Act from './actions';
 import { subclassById, subclassesFor, attacksPerAction } from '../data/progression';
 import * as Freedom from '../content/freedom';
 import * as World from '../world';
+import * as DM from './dm';
+import * as Campaigns from '../world/campaigns';
+import type { CampaignSpec } from './types';
 Freedom.installFreedom();
 import { gridFor, freeNear, costs, pathTo, key as pkey, exitAt, visibleFrom, approachSquare, TILE_NAMES, type Pt } from './grid';
 
@@ -90,6 +93,7 @@ function makeCtx(s: GameState, lines: LogLine[]): Ctx {
 }
 
 bindGreet((id, c) => NPCS[id]?.greet(c));
+Combat.bindWakeFinder((c) => { World.syncAt(c.s); const site = c.s.world.sites[c.s.world.at]; const town = site?.near ?? c.s.world.at; const hub = World.townHubOf(town); if (hub) World.ensureRoom(c.s, hub); return hub; });
 Combat.bindPropFinder((c, noun) => !!Act.findProp(c, noun, true, true)?.state.tags.some((t) => t === 'weapon' || t === 'throw'));
 
 const W: Act.World = {
@@ -150,7 +154,7 @@ function advanceTime(c: Ctx, m: number) {
   // crossed midnight? (midnight is when (minutes + 480) % 1440 == 0)
   const mid = (x: number) => Math.floor((x + 480) / 1440);
   if (mid(s.minutes) > mid(before)) {
-    if (!c.flag('bell_silenced') && !s.world?.journey) {
+    if (!c.flag('bell_silenced') && !s.world?.journey && !c.flag('not_bells')) {
       const near = ['thornwood', 'kessels_rest', 'foothills', 'chapel_yard', 'nave', 'vestry', 'crypt', 'breda_square', 'tavern'].includes(s.loc);
       if (near) c.out('bad', s.loc === 'tower' ? '' : 'Midnight. Far off, from the hills, a bell begins to toll. Slow, patient, wrong.');
       if (c.flag('cleared_yard') && s.loc !== 'chapel_yard') { c.set('cleared_yard', false); }
@@ -177,7 +181,7 @@ function presentNpcs(c: Ctx): string[] {
   const r = room(c.s);
   const here = (r.npcs ? r.npcs(c) : []).filter((id) => !c.flag(`${id}_dead`));
   const comp = c.s.companions.filter((id) => !(id === 'alistair' && c.s.loc === 'tavern' && !c.flag('squib_ok_alistair')));
-  return Array.from(new Set([...here, ...comp]));
+  return Array.from(new Set([...here, ...DM.extrasHere(c), ...comp]));
 }
 
 function describe(c: Ctx, full = true) {
@@ -237,7 +241,7 @@ export function lightRadius(s: GameState): number {
   const pc = s.pc;
   if (!pc) return 2;
   const lit = s.flags.light_on || pc.cantrips.includes('light') || pc.inventory.some((x) => x.id === 'torch' || x.id === 'lantern' || x.id === 'lamp');
-  const dv = speciesOf(pc).darkvision ?? 0;
+  const dv = Math.max(speciesOf(pc).darkvision ?? 0, speciesOf(pc).variants?.find((v) => v.id === pc.options?.variant)?.darkvision ?? 0);
   return Math.max(lit ? 6 : 1, Math.floor(dv / 5));
 }
 
@@ -325,6 +329,7 @@ function matchNpc(c: Ctx, name?: string): Npc | null {
   const n = name.toLowerCase();
   const word = (x: string) => new RegExp(`(^|[^a-z])${x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(n);
   for (const id of ids) { const np = NPCS[id]; if (np && np.names.some((x) => x === n || word(x) || (n.length > 3 && x.startsWith(n)))) return np; }
+  if (!c.s.combat) { const x = DM.spawnExtra(c, n); if (x) return x; }
   return null;
 }
 
@@ -380,8 +385,8 @@ function answerTopic(c: Ctx, np: Npc, text: string): boolean {
     }
   }
   if (best) { best.topic.say(c); c.npc(np.id).topicsSeen.push(best.topic.id); return true; }
-  // Unknown: let the oracle decide whether they know anything, phrased in character.
-  c.say(np.id, pick(c.rng, np.unknown));
+  // Nothing scripted: answer like a person would.
+  DM.smalltalk(c, W, np, text);
   return false;
 }
 
@@ -787,10 +792,10 @@ function sheet(c: Ctx) {
   c.narr('Attacks: ' + atk.join(' · '));
   if (pc.cantrips.length || pc.spells.length) c.narr(`Spells (attack ${fmtMod(spellAttack(pc))}, DC ${spellDC(pc)}): cantrips ${pc.cantrips.map((s) => SPELLS[s]?.name).join(', ')}${pc.spells.length ? `; spell power ${pc.slots.max - pc.slots.used}/${pc.slots.max} (a spell costs its level): ${pc.spells.slice().sort((a, b) => (SPELLS[a]?.level ?? 0) - (SPELLS[b]?.level ?? 0)).map((s) => `${SPELLS[s]?.name} (${SPELLS[s]?.level})`).join(', ')}` : ''}`);
   c.narr('Skills: ' + pc.skills.map((s) => `${s} ${fmtMod(skillBonus(pc, s))}`).join(', '));
-  const feat = FEATS[pc.feat];
   c.narr(`Class (${k.title}): ` + [...(k.features[1] ?? []), ...(pc.level >= 2 ? k.features[2] ?? [] : [])].join(' · '));
   c.narr(`${sp.name}: ` + sp.traits.join(' · ') + (sp.power ? ` · ${sp.power.name}: ${sp.power.desc}` : ''));
-  if (feat) c.narr(`Feat — ${feat.name}: ${feat.desc}`);
+  for (const fid of [pc.feat, ...(pc.feats ?? [])]) { const f = FEATS[fid]; if (f) c.narr(`Feat — ${f.name}: ${f.desc}`); }
+  if (pc.customBg) c.narr(`Background — ${pc.customBg.name}: ${pc.customBg.blurb}${pc.tools?.length ? ` Tools: ${pc.tools.join(', ')}.` : ''}`);
   if (pc.subclass) { const sc = subclassById(pc.subclass); if (sc) c.narr(`${sc.name}: ${sc.blurb}`); }
   else if (pc.level >= 3) c.sys(`Choose a subclass: ${subclassesFor(pc.cls).map((x) => x.name).join(' · ')}. (Say "choose <name>".)`);
   if (pc.features?.length) c.narr('Later features: ' + pc.features.join(' · '));
@@ -835,6 +840,9 @@ const HELP = `Type what you want to do, in plain words. Some examples:
 • travel to Brumandell · continue · explore the area · open the map (or tap World)
 • read the notice board · take job 1 · any rumours? · threats
 • property for sale · buy the tavern · name it The Rusty Bell · upgrade · hire a cook · collect · work the bar
+• campaign · seek a new adventure · abandon the campaign
+• roll 2d6+3 · roll d20 adv · dice (opens the dice tray)
+• hire a sellsword · talk to the barmaid · look around for anyone suspicious · tell Squib my name is Vera
 • sheet · inventory · journal · save
 Nobody makes you follow the main story. Lahti keeps turning either way.`;
 
@@ -846,7 +854,8 @@ function journal(c: Ctx) {
 
 // ---------- character creation ----------
 /** Start a new game from a finished Forge character. */
-export function beginGame(s: GameState, spec: CreationSpec): LogLine[] {
+export interface CampaignChoice { id: string; spec?: CampaignSpec }
+export function beginGame(s: GameState, spec: CreationSpec, choice: CampaignChoice = { id: 'bells' }): LogLine[] {
   const lines: LogLine[] = [];
   const c = makeCtx(s, lines);
   s.pc = createFromSpec(spec);
@@ -854,15 +863,47 @@ export function beginGame(s: GameState, spec: CreationSpec): LogLine[] {
   const pc = s.pc;
   for (const t of Object.keys(spec.life)) { const f = spec.life[t]; if (f) s.flags[`life_${t}_${f}`] = true; }
   if (spec.life.born === 'breda') s.flags.local = true;
-  c.out('title', 'Breda · Monday, May 1');
-  c.narr('Fifteen years ago the civil war ended, and everyone in Kalashscovia agreed to stop counting the dead. The road brings you to Breda the way it brings everyone now: looking for work, or for somewhere to sit down and be safe.');
+  const startLevel = Math.max(1, Math.min(20, choice.spec?.level ?? 1));
+  while (pc.level < startLevel) levelUpSilently(pc);
+  if (choice.id === 'bells') {
+    c.out('title', 'Breda · Monday, May 1');
+    c.narr('Fifteen years ago the civil war ended, and everyone in Kalashscovia agreed to stop counting the dead. The road brings you to Breda the way it brings everyone now: looking for work, or for somewhere to sit down and be safe.');
+    if (pc.backstory) c.narr(`You are ${pc.name}. ${pc.backstory.trim().replace(/([^.!?])$/, '$1.')}`);
+    c.narr('You push open the door of the only tavern in town.');
+    moveTo(c, 'tavern');
+    NPCS.squib.greet(c);
+    s.talkingTo = 'squib';
+    s.world.campaign = { id: 'bells', title: 'The Bells of Lahti', chapter: 0, sites: [], started: 0 };
+    c.sys('Type anything you can think of. Try "drink the ale", "ask about the bell", "read notice board", or "help".');
+    return lines;
+  }
+  const def = choice.spec ? Campaigns.generate(choice.spec) : Campaigns.CAMPAIGNS.find((x) => x.id === choice.id);
+  const start = def?.start ?? choice.spec?.start ?? 'breda';
+  s.world = World.newWorld(s.rng.state ^ 0x5eed, start);
+  s.world.fronts.bells.active = false; s.world.fronts.bells.clock = 0;
+  s.flags.not_bells = true;
+  const hub = World.townHubOf(start) ?? 'breda_square';
+  World.ensureRoom(s, hub);
+  c.out('title', `${World.locName(s, start)} · Monday, May 1`);
   if (pc.backstory) c.narr(`You are ${pc.name}. ${pc.backstory.trim().replace(/([^.!?])$/, '$1.')}`);
-  c.narr('You push open the door of the only tavern in town.');
-  moveTo(c, 'tavern');
-  NPCS.squib.greet(c);
-  s.talkingTo = 'squib';
-  c.sys('Type anything you can think of. Try "drink the ale", "ask about the bell", "read notice board", or "help".');
+  if (choice.id === 'open_road' || !def) {
+    s.world.campaign = { id: 'open_road', title: 'The Open Road', chapter: 0, sites: [], started: 0, done: true };
+    c.narr(`Fifteen years after the war, the roads of Lahti are open again, more or less. You arrive in ${World.locName(s, start)} with a pack, a little money, and no plans at all. That's the point.`);
+    moveTo(c, hub);
+    c.sys('No story is waiting for you: make your own. Try "any rumours?", "read the notice board", "explore", open the World map, or "seek a new adventure" when you want one.');
+    return lines;
+  }
+  moveTo(c, hub);
+  Campaigns.startCampaign(c, def.id, choice.spec);
+  c.sys('Type anything you can think of. "campaign" shows the story so far; the World map shows where to go.');
   return lines;
+}
+
+function levelUpSilently(pc: NonNullable<GameState['pc']>) {
+  const lv = pc.level + 1;
+  pc.xp = Math.max(pc.xp, XP_FOR_LEVEL[lv] ?? pc.xp);
+  levelUpChar(pc);
+  pc.hp = pc.maxHp;
 }
 
 // ---------- main entry ----------
@@ -914,6 +955,26 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
   if (Freedom.militiaRespond(c, raw)) return;
   if (World.respondToll(c, raw)) return;
   if (!s.combat && worldCommand(c, raw)) return;
+  if (!s.combat) {
+    const tm = raw.trim().match(/^(?:i\s+)?(tell|ask|inform|remind|warn|promise)\s+(.+)$/i);
+    if (tm) {
+      const words = tm[2].split(/\s+/);
+      for (const k of [3, 2, 1]) {
+        if (words.length <= k) continue;
+        const name = words.slice(0, k).join(' ').toLowerCase().replace(/^the\s+/, '');
+        const np = matchNpc(c, name);
+        if (!np || !np.names.includes(name)) continue;
+        let rest = words.slice(k).join(' ');
+        const isQ = tm[1].toLowerCase() === 'ask';
+        if (isQ && topicHit(c, np, rest) && !/^(if|whether|what|why|who|where|how|when)\b/i.test(rest)) break;
+        const yn = /^(if|whether)\b/i.test(rest);
+        rest = rest.replace(/^(that|about)\s+/i, '');
+        say(c, DM.secondPerson(rest) + (isQ && (yn || /^(what|why|who|where|how|when|do|does|did|is|are|can|will|would|have|has)\b/i.test(rest)) ? '?' : ''), np.names[0]);
+        return;
+      }
+    }
+  }
+  if (!s.combat && (DM.thought(c, W, raw) || DM.lookAround(c, W, raw) || DM.announce(c, W, raw) || DM.pastime(c, W, raw))) return;
   { const m = raw.match(/^(?:choose|become|follow|swear|take up|i choose)\s+(?:the\s+|a\s+|an\s+|to\s+)?(?:path of |college of |domain of |circle of |oath of |way of |school of )?(.+?)\s*(?:subclass)?$/i);
     if (m && c.pc.level >= 3 && !c.pc.subclass) { const r = chooseSubclass(c.pc, m[1]); if (typeof r !== 'string') { for (const l of r) c.good(l); return; } if (/^choose/i.test(raw)) { c.sys(r); return; } } }
   c.set('subdue_intent', /\b(knock (him|her|them|it)? ?out|knock out|subdue|non-?lethal|don'?t kill|spare (his|her|their) li(fe|ves)|pull (my|your) punches)\b/i.test(raw));
@@ -1153,9 +1214,11 @@ function social(c: Ctx, skill: 'persuasion' | 'intimidation' | 'deception' | 'pe
 }
 
 function emote(c: Ctx, act: string, target?: string) {
+  if (!target) { const tm = RAW.match(/\b(?:at|to|with|for)\s+(?:the\s+)?(.+?)\s*$/i); if (tm && !/^(me|myself|everyone|everybody|the room|room|nobody|no one)$/i.test(tm[1])) target = tm[1]; }
   const np = target ? matchNpc(c, target) : c.s.talkingTo ? NPCS[c.s.talkingTo] : null;
   if (act === 'apologize') { const t = np ?? (c.npc('squib').banned && c.s.loc === 'tavern' ? NPCS.squib : null); if (t?.emote && t.emote(c, act)) return; c.narr('You apologise. It\'s accepted, more or less.'); return; }
   if (np?.emote && np.emote(c, act)) return;
+  if (np) { const e = DM.emoteAt(c, np, act); if (e) { c.narr(e); return; } }
   const who = np ? np.name : null;
   const lines: Record<string, string> = {
     'high five': who ? `${who} looks at your raised hand, unsure what to do with it.` : 'You high-five the air. The air is unmoved.',
@@ -1169,8 +1232,10 @@ function emote(c: Ctx, act: string, target?: string) {
     handshake: who ? `You shake ${who}'s hand.` : 'You shake hands with nobody.', kiss: who ? `${who} leans away, politely.` : 'You blow a kiss at nothing.', flirt: who ? `${who} raises an eyebrow.` : 'You wink at the scenery.', wink: 'You wink.', nod: 'You nod.', shrug: 'You shrug.', cheer: 'You cheer!', clap: 'You clap.', sing: 'You sing a few bars. Not bad.', flex: 'You flex. Impressive, in context.', salute: 'You salute.', sit: 'You sit down for a moment.',
   };
   if (!np && target && ['sit', 'dance', 'hug', 'pet', 'kiss', 'pray', 'cry', 'laugh', 'sing', 'bow', 'clap', 'cheer'].includes(act)) { if (Act.freeAction(c, W, RAW)) return; }
+  if (!np && target && !['sit', 'dance', 'hug', 'pet', 'kiss', 'pray', 'cry', 'laugh', 'sing', 'bow', 'clap', 'cheer'].includes(act) && !/^(the )?(room|crowd|everyone|everybody|all|air|sky|world)$/.test(target)) { c.narr(`There's nobody called "${target}" here.`); return; }
   if (act === 'backflip') { c.narr(c.abilityCheck('dex', 12) ? 'You land the backflip clean. Somebody whistles.' : 'You attempt a backflip and land on your back. Somebody whistles anyway.'); return; }
-  c.narr(lines[act] ?? `You ${act}.`);
+  const base = lines[act] ?? `You ${act}.`;
+  c.narr(np ? base : `${base} ${DM.aftermath(c, W, ['cry'].includes(act) ? 'tender' : ['spit', 'vomit', 'fart', 'burp', 'cheer', 'laugh'].includes(act) ? 'loud' : ['flex', 'salute', 'bow', 'dance', 'wink', 'flirt', 'kiss'].includes(act) ? 'odd' : 'mundane')}`);
 }
 
 function unknown(c: Ctx, raw: string) {
@@ -1198,6 +1263,8 @@ function unknown(c: Ctx, raw: string) {
   if (/^(hunt|go hunting|hunt wolves|hunt for wolves|look for wolves|track the wolves|find the pack)\b/.test(low) && c.s.loc === 'south_road') { Freedom.huntWolves(c); return; }
   // talking to someone and it sounds like one of their topics: it's speech
   if (c.s.talkingTo && presentNpcs(c).includes(c.s.talkingTo) && topicHit(c, NPCS[c.s.talkingTo], raw) && !Act.looksLikeAction(raw)) { say(c, raw); return; }
+  // in a conversation, anything that isn't clearly an action is something you said
+  if (c.s.talkingTo && presentNpcs(c).includes(c.s.talkingTo) && (!Act.looksLikeAction(raw) || /^(you|your|you're|youre|i'm|i am|my|we|that|this|it's|so|well|but|and|really|maybe)\b/.test(low))) { say(c, raw); return; }
   // an action: try anything
   if (Act.freeAction(c, W, raw)) return;
   if (c.s.talkingTo) { say(c, raw); return; }
@@ -1250,6 +1317,9 @@ function worldCommand(c: Ctx, raw: string): boolean {
     if (inTown) { c.narr('The best gossip is in the inn.'); return true; }
     return false;
   }
+  if (/^(campaign|the campaign|quest|quests|main quest|story|the story|my story|current quest|objective|what'?s my (quest|objective|goal))$/.test(low)) { Campaigns.campaignStatus(c); return true; }
+  if (/^(seek|find|start|begin|look for) (a |an |another )?(new )?(adventure|campaign|quest|story)$|^new (adventure|campaign)$/.test(low)) { Campaigns.newAdventure(c); return true; }
+  if (/^(abandon|drop|quit|give up( on)?) (the |my )?(campaign|quest|story)$/.test(low)) { const st = s.world.campaign; if (st && !st.done && st.id !== 'bells') { st.done = true; c.narr(`You let ${st.title} go. Someone else will have to deal with it. Or no one will.`); } else c.sys('You\'re not on a campaign you can drop.'); return true; }
   if (/^(threats|fronts|world news|the state of the world|what'?s happening in the world|how is the world)$/.test(low)) { threats(c); return true; }
   if (/^(where am i|where is this|location)$/.test(low)) { c.sys(`${World.locName(s, town)}${s.world.journey ? `, on the road to ${World.locName(s, s.world.journey.dest)}` : ''}. ${ROOMS[s.loc]?.name ?? ''}`); return true; }
   // property
@@ -1394,6 +1464,7 @@ export function migrate(raw: unknown): GameState | null {
   if (out.phase === 'create' && !out.pc) out.phase = 'title';
   out.pos ??= null; out.explored ??= {}; out.bounty ??= 0;
   World.migrateWorld(out);
+  Campaigns.migrateCampaign(makeCtx(out, []));
   World.ensureRoom(out, out.loc);
   if (out.combat?.loc) World.ensureRoom(out, out.combat.loc);
   if (!ROOMS[out.loc]) { out.loc = 'breda_square'; out.pos = null; }

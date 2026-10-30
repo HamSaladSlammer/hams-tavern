@@ -1,0 +1,1 @@
+{ "nativeApi": 2, "note": "Bump nativeApi whenever a Capacitor plugin is added or the Android shell changes. Players on an older app are told to download the new APK instead of a live update." }

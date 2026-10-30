@@ -2,7 +2,8 @@
 import { CLASSES, SPECIES, BACKGROUNDS, FEATS, SPELLS, ITEMS, classById, speciesById, backgroundById } from '../engine/srd';
 import { LIFE } from '../data/lifepath';
 import { arrayFor } from '../data/classes';
-import { defaultSpec, finalAbilities, createFromSpec, armorClass, spellDC, prof, isCantrip, fmtMoney } from '../engine/character';
+import { TOOLS } from '../data/backgrounds';
+import { specBackground, defaultSpec, finalAbilities, createFromSpec, armorClass, spellDC, prof, isCantrip, fmtMoney } from '../engine/character';
 import { mod, fmtMod } from '../engine/dice';
 import { ABILITIES, type Abilities, type Ability, type CreationSpec, type Skill } from '../engine/types';
 
@@ -31,7 +32,7 @@ function assign(spec: CreationSpec, vals: number[]) {
   spec.base = a;
 }
 
-export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => void, onCancel: () => void) {
+export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => void, onCancel: () => void, beginLabel = 'Enter the Smoking Barrel') {
   const F: ForgeState = { spec: defaultSpec('fighter', 'human', 'soldier', ''), method: 'array', rolled: [], err: '' };
   F.spec.name = '';
   root.hidden = false;
@@ -39,8 +40,14 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
   const fixSpec = () => {
     const s = F.spec;
     const k = classById(s.cls);
-    const bg = backgroundById(s.background);
+    if (s.background === 'custom' && !s.customBg) { const k0 = classById(s.cls); const ab = Array.from(new Set<Ability>([...k0.primary, 'con', 'dex', 'wis'])).slice(0, 3) as [Ability, Ability, Ability]; s.customBg = { name: '', abilities: ab, skills: [], feat: 'skilled', tool: TOOLS[0] }; }
+    const bg = specBackground(s);
     const sp = speciesById(s.species);
+    if (s.species === 'custom_lineage' && !s.lineage) s.lineage = { plus2: classById(s.cls).primary[0], feat: 'alert', size: 'Medium' };
+    if (s.lineage && !s.lineage.skill) s.lineage.skill = 'perception';
+    const feats = [bg.feat, s.species === 'custom_lineage' ? s.lineage?.feat : ''].filter(Boolean);
+    const nSkilled = feats.filter((f) => f === 'skilled').length;
+    s.featSkills = (s.featSkills ?? []).slice(0, 3 * nSkilled);
     if (sp.variants?.length && !sp.variants.some((v) => v.id === s.variant)) s.variant = sp.variants[0].id;
     if (!sp.variants?.length) s.variant = undefined;
     for (const o of k.options ?? []) if (!o.choices.some((c) => c.id === s.options[o.id])) s.options[o.id] = o.choices[0].id;
@@ -54,7 +61,7 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
   };
 
   const kitItems = (): [string, number][] => {
-    const k = classById(F.spec.cls); const bg = backgroundById(F.spec.background);
+    const k = classById(F.spec.cls); const bg = specBackground(F.spec);
     const m = new Map<string, number>();
     for (const [id, q] of [...k.kit, ...bg.kit]) m.set(id, (m.get(id) ?? 0) + q);
     return Array.from(m.entries()).filter(([id]) => ITEMS[id]);
@@ -65,8 +72,12 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
     const s = F.spec;
     const k = classById(s.cls);
     const sp = speciesById(s.species);
-    const bg = backgroundById(s.background);
-    const groups = ['Common folk', 'Rare folk', 'Strange folk'] as const;
+    const bg = specBackground(s);
+    const groups = ['Common folk', 'Rare folk', 'Strange folk', 'Your own'] as const;
+    const cb = s.background === 'custom' ? s.customBg! : null;
+    const featOpts = (sel: string) => Object.values(FEATS).map((f) => `<option value="${f.id}"${f.id === sel ? ' selected' : ''}>${esc(f.name)}</option>`).join('');
+    const nSkilled = [bg.feat, s.species === 'custom_lineage' ? s.lineage?.feat : ''].filter((f) => f === 'skilled').length;
+    const cbMax = cb ? (cb.tool ? 2 : 3) : 0;
     const fa = finalAbilities(s);
     const bonus = (a: Ability) => fa[a] - s.base[a];
     const abilityInputs = ABILITIES.map((a) => {
@@ -97,7 +108,13 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
         </div>
         <p class="blurb">${esc(sp.blurb)}</p><p class="small">${esc(sp.lore)}</p>
         <ul class="traits">${sp.traits.map((t) => `<li>${esc(t)}</li>`).join('')}${sp.power ? `<li><b>${esc(sp.power.name)}.</b> ${esc(sp.power.desc)}</li>` : ''}${sp.variants?.length ? `<li><b>${esc(sp.variants.find((v) => v.id === s.variant)?.name ?? '')}.</b> ${esc(sp.variants.find((v) => v.id === s.variant)?.desc ?? '')}</li>` : ''}</ul>
-        <p class="small">${sp.size} · speed ${sp.speed} ft${sp.darkvision ? ` · darkvision ${sp.darkvision} ft` : ''}</p></section>
+        <p class="small">${sp.size} · speed ${sp.speed} ft${sp.darkvision ? ` · darkvision ${sp.darkvision} ft` : ''}</p>
+        ${s.species === 'custom_lineage' && s.lineage ? `<div class="custom-box"><div class="g3">
+          <label class="f"><span class="lbl">+2 to</span><select data-lin="plus2">${ABILITIES.map((a) => `<option value="${a}"${s.lineage!.plus2 === a ? ' selected' : ''}>${ABN[a]}</option>`).join('')}</select></label>
+          <label class="f"><span class="lbl">Size</span><select data-lin="size">${(['Medium', 'Small'] as const).map((z) => `<option${s.lineage!.size === z ? ' selected' : ''}>${z}</option>`).join('')}</select></label>
+          ${s.variant === 'skill' ? `<label class="f"><span class="lbl">Skill</span><select data-lin="skill">${ALL_SKILLS.map((k2) => `<option value="${k2}"${s.lineage!.skill === k2 ? ' selected' : ''}>${cap(k2)}</option>`).join('')}</select></label>` : '<div></div>'}
+          <label class="f span3"><span class="lbl">Lineage feat (any)</span><select data-lin="feat">${featOpts(s.lineage.feat)}</select></label>
+        </div><p class="small">${esc(FEATS[s.lineage.feat]?.desc ?? '')}</p></div>` : ''}</section>
 
         <section><h3>Class</h3><div class="g2">
           <label class="f"><span class="lbl">Class</span><select data-in="cls">${CLASSES.map((x) => `<option value="${x.id}"${x.id === s.cls ? ' selected' : ''}>${esc(x.name)} — ${esc(x.title)}</option>`).join('')}</select></label>
@@ -110,13 +127,26 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
         <p class="small">Hit die d${k.hitDie} · saves ${k.saves.map((a) => a.toUpperCase()).join(', ')} · armour ${k.armorProf.length ? k.armorProf.join(', ') : 'none'} · weapons ${k.weaponProf.join(', ')}. Subclasses arrive at level 3.</p></section>
 
         <section><h3>Background</h3><div class="g3">
-          <label class="f span2"><span class="lbl">Background (sets your ability boosts and feat)</span><select data-in="background">${BACKGROUNDS.map((b) => `<option value="${b.id}"${b.id === s.background ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
+          <label class="f span2"><span class="lbl">Background (sets your ability boosts and feat)</span><select data-in="background">${BACKGROUNDS.map((b) => `<option value="${b.id}"${b.id === s.background ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="custom"${s.background === 'custom' ? ' selected' : ''}>✎ Custom background (build your own)</option></select></label>
           <label class="f"><span class="lbl">+2</span><select data-in="plus2"${s.boost.even ? ' disabled' : ''}>${bg.abilities.map((a) => `<option value="${a}"${s.boost.plus2 === a ? ' selected' : ''}>${ABN[a]}</option>`).join('')}</select></label>
           <label class="f"><span class="lbl">+1</span><select data-in="plus1"${s.boost.even ? ' disabled' : ''}>${bg.abilities.filter((a) => a !== s.boost.plus2).map((a) => `<option value="${a}"${s.boost.plus1 === a ? ' selected' : ''}>${ABN[a]}</option>`).join('')}</select></label>
         </div>
         <label class="f check"><input type="checkbox" data-in="even"${s.boost.even ? ' checked' : ''}> <span>Spread it: +1 to ${bg.abilities.map((a) => ABN[a]).join(', ')}</span></label>
-        <p class="blurb">${esc(bg.blurb)}</p>
-        <p class="small">Skills: ${bg.skills.map(cap).join(', ')} · Feat: <b>${esc(FEATS[bg.feat]?.name ?? bg.feat)}</b> — ${esc(FEATS[bg.feat]?.desc ?? '')}</p></section>
+        ${cb ? `<div class="custom-box">
+          <div class="g2"><label class="f"><span class="lbl">Background name</span><input type="text" data-cb="name" maxlength="40" value="${esc(cb.name)}" placeholder="e.g. Coltale Gravedigger"></label>
+          <label class="f"><span class="lbl">Feat (any)</span><select data-cb="feat">${featOpts(cb.feat)}</select></label></div>
+          <p class="small">${esc(FEATS[cb.feat]?.desc ?? '')}</p>
+          <div class="lbl">Three abilities this life made strong</div>
+          <div class="g3">${[0, 1, 2].map((i) => `<label class="f"><select data-cb="ab${i}">${ABILITIES.map((a) => `<option value="${a}"${cb.abilities[i] === a ? ' selected' : ''}>${ABN[a]}</option>`).join('')}</select></label>`).join('')}</div>
+          <div class="g2"><label class="f"><span class="lbl">Proficiencies</span><select data-cb="extra"><option value="tool"${cb.tool ? ' selected' : ''}>Two skills and a tool</option><option value="skill"${!cb.tool ? ' selected' : ''}>Three skills</option></select></label>
+          ${cb.tool ? `<label class="f"><span class="lbl">Tool</span><select data-cb="tool">${TOOLS.map((t2) => `<option${cb.tool === t2 ? ' selected' : ''}>${esc(t2)}</option>`).join('')}</select></label>` : '<div></div>'}</div>
+          <div class="lbl">Background skills · ${cb.skills.length}/${cbMax}</div>
+          <div class="chips wrap">${ALL_SKILLS.map((sk) => { const on = cb.skills.includes(sk); return `<button type="button" class="chip${on ? ' on' : ''}" data-act="cbskill" data-id="${sk}"${!on && cb.skills.length >= cbMax ? ' disabled' : ''}>${cap(sk)}</button>`; }).join('')}</div>
+          <label class="f"><span class="lbl">What was this life? (optional)</span><input type="text" data-cb="blurb" maxlength="160" value="${esc(cb.blurb ?? '')}" placeholder="You dug graves at Coltale through the war, and never once looked away."></label>
+          <p class="small">Following the rules for building a background: three abilities (+2/+1 or +1/+1/+1), one feat, two skills and a tool, and 50 gold instead of a kit.</p>
+        </div>` : `<p class="blurb">${esc(bg.blurb)}</p>
+        <p class="small">Skills: ${bg.skills.map(cap).join(', ')} · Feat: <b>${esc(FEATS[bg.feat]?.name ?? bg.feat)}</b> — ${esc(FEATS[bg.feat]?.desc ?? '')}</p>`}
+        ${nSkilled ? `<div class="lbl">Skilled: pick ${3 * nSkilled} more skills · ${(s.featSkills ?? []).length}/${3 * nSkilled}</div><div class="chips wrap">${ALL_SKILLS.map((sk) => { const on = (s.featSkills ?? []).includes(sk); return `<button type="button" class="chip${on ? ' on' : ''}" data-act="fskill" data-id="${sk}"${!on && (s.featSkills ?? []).length >= 3 * nSkilled ? ' disabled' : ''}>${cap(sk)}</button>`; }).join('')}</div>` : ''}</section>
 
         <section><div class="row-between"><h3>Abilities</h3><div class="row">
           <button type="button" class="sm${F.method === 'array' ? ' on' : ''}" data-act="m-array">Standard array</button>
@@ -148,7 +178,7 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
             ${s.customItems.map((it, i) => `<div class="it"><span>${esc(it)} <span class="small">custom</span></span><button type="button" class="link" data-act="del-item" data-i="${i}">Remove</button></div>`).join('')}</div>
           <div class="row"><input type="text" id="forge-add" maxlength="60" placeholder="Add a keepsake, e.g. Grandmother's silver locket"><button type="button" class="sm" data-act="add-item">Add</button></div></section>
 
-        <div class="forge-go"><button type="button" class="primary" data-act="begin">Enter the Smoking Barrel</button><span class="err">${esc(F.err)}</span></div>
+        <div class="forge-go"><button type="button" class="primary" data-act="begin">${esc(beginLabel)}</button><span class="err">${esc(F.err)}</span></div>
       </form>
       <aside class="forge-preview" id="forge-preview"></aside>
       </div></div>`;
@@ -164,7 +194,7 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
     try { pc = createFromSpec({ ...s, name: s.name || 'Unnamed' }); } catch { el.innerHTML = ''; return; }
     const sp = speciesById(s.species);
     el.innerHTML = `<div class="pv-name">${esc(s.name || 'Unnamed')}</div>
-      <div class="small">${esc(sp.name)}${s.variant ? ` (${esc(sp.variants?.find((v) => v.id === s.variant)?.name ?? '')})` : ''} · ${esc(k.name)} · ${esc(backgroundById(s.background).name)}</div>
+      <div class="small">${esc(sp.name)}${s.variant ? ` (${esc(sp.variants?.find((v) => v.id === s.variant)?.name ?? '')})` : ''} · ${esc(k.name)} · ${esc(specBackground(s).name)}</div>
       <dl class="kv"><dt>Hit points</dt><dd>${pc.maxHp}</dd><dt>Armour class</dt><dd>${armorClass(pc)}</dd><dt>Proficiency</dt><dd>+${prof(pc)}</dd><dt>Speed</dt><dd>${sp.speed} ft</dd>${k.casting ? `<dt>Spell DC</dt><dd>${spellDC(pc)}</dd>` : ''}<dt>Purse</dt><dd>${fmtMoney(pc.copper)}</dd></dl>
       <div class="abil">${ABILITIES.map((a) => `<div class="ab"><span class="k">${a.toUpperCase()}</span><span class="m">${fmtMod(mod(pc.abilities[a]))}</span><span class="s">${pc.abilities[a]}</span></div>`).join('')}</div>
       <div class="small">Skills: ${pc.skills.map(cap).join(', ')}</div>
@@ -175,6 +205,8 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
     const s = F.spec; const k = classById(s.cls);
     if (!s.name.trim()) return 'Give your hero a name.';
     if (F.method === 'pb' && ABILITIES.reduce((n, a) => n + (PB[s.base[a]] ?? 99), 0) > 27) return 'Too many points spent.';
+    if (s.background === 'custom' && s.customBg) { const need = s.customBg.tool ? 2 : 3; if (s.customBg.skills.length < need) return `Pick ${need - s.customBg.skills.length} more background skill${need - s.customBg.skills.length > 1 ? 's' : ''}.`; }
+    { const n = [specBackground(s).feat, s.species === 'custom_lineage' ? s.lineage?.feat : ''].filter((f) => f === 'skilled').length; if ((s.featSkills ?? []).length < 3 * n) return `Pick ${3 * n - (s.featSkills ?? []).length} more Skilled skills.`; }
     if (s.skills.length < k.skillCount) return `Pick ${k.skillCount - s.skills.length} more skill${k.skillCount - s.skills.length > 1 ? 's' : ''}.`;
     if (k.casting && s.cantrips.length < k.casting.cantrips) return 'Pick your cantrips.';
     if (k.casting && s.spells.length < k.casting.prepared[0]) return 'Pick your 1st-level spells.';
@@ -217,6 +249,8 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
         s.base[a] = v; break;
       }
       case 'skill': toggle(s.skills, t.dataset.id!); break;
+      case 'cbskill': if (s.customBg) toggle(s.customBg.skills, t.dataset.id!); break;
+      case 'fskill': s.featSkills ??= []; toggle(s.featSkills, t.dataset.id!); break;
       case 'cantrip': toggle(s.cantrips, t.dataset.id!); break;
       case 'spell': toggle(s.spells, t.dataset.id!); break;
       case 'life': for (const tb of LIFE) s.life[tb.id] = pick(tb.entries).id; break;
@@ -244,6 +278,19 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
     else if (k === 'even') s.boost.even = t.checked;
     else if (k === 'plus2') s.boost.plus2 = t.value as Ability;
     else if (k === 'plus1') s.boost.plus1 = t.value as Ability;
+    else if (t.dataset.cb && s.customBg) {
+      const f = t.dataset.cb; const cbx = s.customBg;
+      if (f === 'name') { cbx.name = t.value.slice(0, 40); preview(); return; }
+      if (f === 'blurb') { cbx.blurb = t.value.slice(0, 160); return; }
+      if (f === 'feat') cbx.feat = t.value;
+      else if (f === 'extra') { cbx.tool = t.value === 'tool' ? TOOLS[0] : undefined; cbx.skills = cbx.skills.slice(0, t.value === 'tool' ? 2 : 3); }
+      else if (f === 'tool') cbx.tool = t.value;
+      else if (/^ab\d$/.test(f)) { const i = Number(f[2]); const v = t.value as Ability; const j = cbx.abilities.indexOf(v); if (j >= 0 && j !== i) cbx.abilities[j] = cbx.abilities[i]; cbx.abilities[i] = v; }
+    }
+    else if (t.dataset.lin && s.lineage) {
+      const f = t.dataset.lin;
+      if (f === 'plus2') s.lineage.plus2 = t.value as Ability; else if (f === 'feat') s.lineage.feat = t.value; else if (f === 'size') s.lineage.size = t.value as 'Small' | 'Medium'; else if (f === 'skill') s.lineage.skill = t.value as Skill;
+    }
     else if (t.dataset.opt) s.options[t.dataset.opt] = t.value;
     else if (t.dataset.life) s.life[t.dataset.life] = t.value;
     else if (t.dataset.kit) { const id = t.dataset.kit; if (t.checked) s.removedKit = s.removedKit.filter((x) => x !== id); else s.removedKit.push(id); preview(); return; }
@@ -260,6 +307,8 @@ export function openForge(root: HTMLElement, onDone: (spec: CreationSpec) => voi
     if (t.dataset.in === 'name') { F.spec.name = t.value.replace(/[^\p{L}\p{N}' -]/gu, '').slice(0, 24); preview(); }
     else if (t.dataset.in === 'look') F.spec.look = t.value;
     else if (t.dataset.in === 'backstory') F.spec.backstory = t.value;
+    else if (t.dataset.cb === 'name' && F.spec.customBg) { F.spec.customBg.name = t.value.slice(0, 40); preview(); }
+    else if (t.dataset.cb === 'blurb' && F.spec.customBg) F.spec.customBg.blurb = t.value.slice(0, 160);
   };
 
   render();

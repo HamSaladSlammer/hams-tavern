@@ -38,3 +38,30 @@ describe('levels 1-20', () => {
     expect(log).toMatch(/more attack/);
   });
 });
+
+import { createFromSpec as cfs, defaultSpec as ds, hasFeat as hf } from '../src/engine/character';
+describe('custom origins', () => {
+  it('a custom background gives chosen abilities, skills, feat and tool', () => {
+    const s = ds('rogue', 'human', 'soldier', 'Ilka');
+    s.background = 'custom';
+    s.customBg = { name: 'Coltale Gravedigger', abilities: ['con', 'wis', 'dex'], skills: ['religion', 'medicine'], feat: 'skilled', tool: 'Herbalism kit' };
+    s.boost = { plus2: 'dex', plus1: 'con', even: false };
+    s.featSkills = ['history', 'nature', 'arcana'];
+    const base = s.base.dex;
+    const c = cfs(s);
+    expect(c.abilities.dex).toBe(Math.min(20, base + 2));
+    for (const k of ['religion', 'medicine', 'history', 'nature', 'arcana'] as const) expect(c.skills).toContain(k);
+    expect(c.customBg?.name).toBe('Coltale Gravedigger');
+    expect(c.tools).toContain('Herbalism kit');
+    expect(hf(c, 'skilled')).toBe(true);
+  });
+  it('a custom lineage gives +2, a second feat, and darkvision or a skill', () => {
+    const s = ds('wizard', 'custom_lineage', 'sage', 'Nyx');
+    s.variant = 'skill';
+    s.lineage = { plus2: 'int', feat: 'alert', skill: 'stealth', size: 'Small' };
+    const c = cfs(s);
+    expect(hf(c, 'alert')).toBe(true);
+    expect(hf(c, 'magic_wizard')).toBe(true);
+    expect(c.skills).toContain('stealth');
+  });
+});

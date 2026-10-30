@@ -158,9 +158,9 @@ export function ensureSiteRooms(site: SiteState, onCleared: (c: Ctx, site: SiteS
     const id = roomId(site, i);
     MAPS[id] = map;
     const lvl = Math.max(site.level, 1);
-    const foes = sr ? sr.foes : isBoss ? [[bossFor(r, t, lvl), 1] as [string, number], ...buildFoes(r, t.pool, lvl, 0.5)] : (i === 0 && next(r) < 0.3 ? [] : buildFoes(r, t.pool, lvl, 0.8));
+    const foes = sr ? (isBoss && site.boss ? [[site.boss, 1] as [string, number], ...sr.foes.slice(1)] : sr.foes) : isBoss ? [[site.boss ?? bossFor(r, t, lvl), 1] as [string, number], ...buildFoes(r, t.pool, lvl, 0.5)] : (i === 0 && next(r) < 0.3 ? [] : buildFoes(r, t.pool, lvl, 0.8));
     const loot = sr?.loot ?? (isBoss ? lootFor(r, lvl, true) : next(r) < 0.45 ? lootFor(r, lvl, false) : null);
-    const desc = sr?.desc ?? rp(r, t.descs[role]);
+    const desc = sr?.desc ?? site.descs?.[i] ?? rp(r, t.descs[role]);
     const name = sr?.name ?? `${site.name}${i === 0 ? '' : ` — ${isBoss ? 'the depths' : ['the passage', 'the hall', 'the lower rooms', 'the far chambers', 'the old rooms'][i % 5]}`}`;
     const exits: Room['exits'] = [{ to: exitBack(i), names: ['back', 'out', 'leave', 'exit', 'down', 'south', 'return'], label: backLabel(i), minutes: 1 }];
     if (!isBoss) exits.push({ to: roomId(site, i + 1), names: ['on', 'forward', 'onward', 'deeper', 'in', 'inside', 'next', 'north', 'up', 'further'], label: 'Deeper in', minutes: 1, blocked: (c) => (foes.length && !c.flag(`${id}_cleared`) && !c.flag(`${id}_snuck`) ? 'You\'d have to get past them first. (Fight, sneak past, or talk.)' : null) });

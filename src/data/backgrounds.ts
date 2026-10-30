@@ -3,7 +3,7 @@
 import type { Ability, Skill } from '../engine/types';
 
 export interface FeatDef { id: string; name: string; desc: string }
-export interface BackgroundDef { id: string; name: string; abilities: [Ability, Ability, Ability]; skills: [Skill, Skill]; feat: string; kit: [string, number][]; copper: number; blurb: string }
+export interface BackgroundDef { id: string; name: string; abilities: [Ability, Ability, Ability]; skills: Skill[]; feat: string; kit: [string, number][]; copper: number; blurb: string }
 
 export const FEATS: Record<string, FeatDef> = {
   alert: { id: 'alert', name: 'Alert', desc: 'Add your proficiency bonus to initiative.' },
@@ -45,3 +45,11 @@ export const BACKGROUNDS: BackgroundDef[] = [
 ];
 
 export const backgroundById = (id: string) => BACKGROUNDS.find((b) => b.id === id) ?? BACKGROUNDS[3];
+
+/** A background built by the player, following the rules for creating one: three abilities to boost, one feat, two skills, and a tool (or a third skill). */
+export interface CustomBackground { name: string; abilities: [Ability, Ability, Ability]; skills: Skill[]; feat: string; tool?: string; blurb?: string }
+export const TOOLS = ['Thieves\' tools', 'Smith\'s tools', 'Herbalism kit', 'Disguise kit', 'Forgery kit', 'Navigator\'s tools', 'Gaming set', 'Musical instrument', 'Cook\'s utensils', 'Brewer\'s supplies', 'Carpenter\'s tools', 'Cartographer\'s tools', 'Tinker\'s tools', 'Gunsmith\'s tools'];
+export function customBackgroundDef(cb: CustomBackground): BackgroundDef {
+  const tool = cb.tool === 'Thieves\' tools' ? [['thieves_tools', 1]] : cb.tool === 'Smith\'s tools' ? [['smith_tools', 1]] : cb.tool === 'Herbalism kit' ? [['herbalism_kit', 1]] : [];
+  return { id: 'custom', name: cb.name.trim() || 'Custom Background', abilities: cb.abilities, skills: cb.skills, feat: cb.feat, kit: tool as [string, number][], copper: 5000, blurb: cb.blurb?.trim() || 'A life of your own making.' };
+}

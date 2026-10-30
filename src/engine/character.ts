@@ -2,7 +2,7 @@ import { mod, roll, type Rng } from './dice';
 import { ITEMS, PROF_BONUS, UNARMED, XP_FOR_LEVEL } from './srd';
 import { CLASSES, classById, arrayFor, type ClassDef } from '../data/classes';
 import { SPECIES, speciesById, type SpeciesDef } from '../data/species';
-import { BACKGROUNDS, backgroundById, FEATS } from '../data/backgrounds';
+import { BACKGROUNDS, backgroundById, FEATS, customBackgroundDef } from '../data/backgrounds';
 import { LIFE } from '../data/lifepath';
 import { spellPoints, maxSpellLevel, attacksPerAction, asiLevels, CLASS_FEATURES, subclassById, subclassesFor, cantripTier, casterKind } from '../data/progression';
 import type { Abilities, Ability, Character, CreationSpec, Skill, Stack, WeaponDef } from './types';
@@ -11,7 +11,11 @@ import { ABILITIES, SKILL_ABILITY } from './types';
 export const SOLO_GRIT = 4;
 export const cls = (c: Character): ClassDef => classById(c.cls);
 export const species = (c: Character): SpeciesDef => speciesById(c.species);
-export const background = (c: Character) => backgroundById(c.background);
+export const background = (c: Character) => c.customBg ?? backgroundById(c.background);
+export const specBackground = (spec: CreationSpec) => (spec.background === 'custom' && spec.customBg ? customBackgroundDef(spec.customBg) : backgroundById(spec.background));
+/** Every feat a character has: from their background, and from a custom lineage. */
+export const featsOf = (c: Character) => [c.feat, ...(c.feats ?? [])];
+export const hasFeat = (c: Character, id: string) => c.feat === id || !!c.feats?.includes(id);
 export const prof = (c: Character) => PROF_BONUS(c.level);
 export const am = (c: Character, a: Ability) => mod(c.abilities[a]);
 export const variant = (c: Character) => species(c).variants?.find((v) => v.id === c.options.variant);
@@ -41,7 +45,8 @@ export const isCantrip = (id: string) => SPELLS[id]?.level === 0;
 
 export function finalAbilities(spec: CreationSpec): Abilities {
   const a = { ...spec.base };
-  const bg = backgroundById(spec.background);
+  const bg = specBackground(spec);
+  if (spec.species === 'custom_lineage' && spec.lineage) a[spec.lineage.plus2] += 2;
   if (spec.boost.even) for (const k of bg.abilities) a[k] += 1;
   else { a[spec.boost.plus2] += 2; if (spec.boost.plus1 !== spec.boost.plus2) a[spec.boost.plus1] += 1; }
   for (const k of ABILITIES) a[k] = Math.min(20, a[k]);
@@ -50,7 +55,7 @@ export function finalAbilities(spec: CreationSpec): Abilities {
 
 export function createFromSpec(spec: CreationSpec): Character {
   const k = classById(spec.cls);
-  const bg = backgroundById(spec.background);
+  const bg = specBackground(spec);
   const sp = speciesById(spec.species);
   const vr = sp.variants?.find((v) => v.id === spec.variant) ?? sp.variants?.[0];
   const abilities = finalAbilities(spec);
@@ -67,14 +72,20 @@ export function createFromSpec(spec: CreationSpec): Character {
   const cantrips = new Set<string>(spec.cantrips);
   if (sp.cantrip) cantrips.add(sp.cantrip);
   if (vr?.cantrip) cantrips.add(vr.cantrip);
-  if (bg.feat === 'magic_cleric') { cantrips.add('guidance'); cantrips.add('sacred_flame'); }
-  if (bg.feat === 'magic_wizard') { cantrips.add('prestidigitation'); cantrips.add('fire_bolt'); }
-  if (bg.feat === 'magic_druid') { cantrips.add('druidcraft'); cantrips.add('produce_flame'); }
+  const lineageFeat = spec.species === 'custom_lineage' && spec.lineage ? spec.lineage.feat : '';
+  const allFeats = [bg.feat, lineageFeat].filter(Boolean);
+  for (const f of allFeats) {
+    if (f === 'magic_cleric') { cantrips.add('guidance'); cantrips.add('sacred_flame'); }
+    if (f === 'magic_wizard') { cantrips.add('prestidigitation'); cantrips.add('fire_bolt'); }
+    if (f === 'magic_druid') { cantrips.add('druidcraft'); cantrips.add('produce_flame'); }
+  }
   if (k.id === 'cleric' && options.god === 'road') cantrips.add('guidance');
   const spells = new Set<string>(spec.spells);
   if (k.id === 'ranger') spells.add('hunters_mark');
   // skills
   const skills = new Set<Skill>([...spec.skills, ...bg.skills, ...(sp.skills ?? []), ...(vr?.skills ?? [])]);
+  if (spec.species === 'custom_lineage' && spec.lineage?.skill && vr?.id === 'skill') skills.add(spec.lineage.skill);
+  if (allFeats.includes('skilled')) for (const x of (spec.featSkills ?? []).slice(0, 3 * allFeats.filter((f) => f === 'skilled').length)) skills.add(x);
   const weaponProf = [...k.weaponProf];
   const armorProf = [...k.armorProf];
   if ((k.id === 'cleric' && options.order === 'protector')) { if (!weaponProf.includes('martial')) weaponProf.push('martial'); if (!armorProf.includes('heavy')) armorProf.push('heavy'); }
@@ -86,7 +97,7 @@ export function createFromSpec(spec: CreationSpec): Character {
     saves: k.saves, weaponProf, armorProf, cantrips: Array.from(cantrips), spells: Array.from(spells),
     slots: { max: spellPoints(k.id, 1), used: 0 }, resources: {}, inventory,
     equipped: { ...k.equip, worn: [] }, ammo: {}, copper: k.copper + bg.copper, conditions: [], deathSaves: { ok: 0, fail: 0 },
-    pronoun: spec.pronoun, options, feat: bg.feat, look: spec.look, backstory: spec.backstory, life: { ...spec.life }, drunk: 0, wildHp: 0, perks: [], features: [],
+    pronoun: spec.pronoun, options, feat: bg.feat, feats: lineageFeat ? [lineageFeat] : [], customBg: bg.id === 'custom' ? bg : undefined, tools: spec.customBg?.tool ? [spec.customBg.tool] : [], look: spec.look, backstory: spec.backstory, life: { ...spec.life }, drunk: 0, wildHp: 0, perks: [], features: [],
   };
   if (k.id === 'cleric' && options.order === 'protector') c.equipped.armor = 'chain_mail';
   if (!c.equipped.ranged && hasItem(c, 'service_revolver')) c.equipped.ranged = 'service_revolver';
@@ -135,15 +146,15 @@ function setResources(c: Character) {
   const sp = species(c);
   if (sp.power) set(sp.power.id, sp.power.uses === 'prof' ? p : sp.power.uses, sp.power.per);
   if (sp.flags?.includes('relentless')) set('relentless', 1, 'long');
-  if (c.feat === 'silver_tongue') set('silver_tongue', 1, 'long');
-  if (c.feat === 'remedy') set('remedy', 1, 'short');
-  if (c.feat === 'survivors_luck') set('luck_points', 3, 'long');
+  if (hasFeat(c, 'silver_tongue')) set('silver_tongue', 1, 'long');
+  if (hasFeat(c, 'remedy')) set('remedy', 1, 'short');
+  if (hasFeat(c, 'survivors_luck')) set('luck_points', 3, 'long');
 }
 
 export function maxHpAt(c: Character, level: number): number {
   const k = cls(c);
   const con = am(c, 'con');
-  const perLevel = (c.species === 'dwarf' ? 1 : 0) + (c.feat === 'stout' ? 2 : 0);
+  const perLevel = (c.species === 'dwarf' ? 1 : 0) + (hasFeat(c, 'stout') ? 2 : 0);
   const perLevel2 = perLevel + (c.perks ?? []).filter((p) => p.startsWith('hp_lvl:')).reduce((n, p) => n + Number(p.split(':')[1]), 0);
   let hp = k.hitDie + con + perLevel2 + SOLO_GRIT;
   for (let l = 2; l <= level; l++) hp += Math.max(1, Math.floor(k.hitDie / 2) + 1 + con) + perLevel2;
@@ -304,10 +315,10 @@ export function skillBonus(c: Character, s: Skill): number {
   return b;
 }
 
-export function passivePerception(c: Character) { return 10 + skillBonus(c, 'perception') + (c.feat === 'watchful' ? 5 : 0); }
+export function passivePerception(c: Character) { return 10 + skillBonus(c, 'perception') + (hasFeat(c, 'watchful') ? 5 : 0); }
 
 export function initiativeBonus(c: Character): number {
-  return am(c, 'dex') + (c.feat === 'alert' ? prof(c) : 0) + (species(c).flags?.includes('hare-trigger') ? prof(c) : 0) + ((c.perks ?? []).includes('init_adv') ? 3 : 0);
+  return am(c, 'dex') + (hasFeat(c, 'alert') ? prof(c) : 0) + (species(c).flags?.includes('hare-trigger') ? prof(c) : 0) + ((c.perks ?? []).includes('init_adv') ? 3 : 0);
 }
 
 export function castingAbility(c: Character): Ability {
@@ -329,7 +340,7 @@ export const IMPROVISED = ['mug_empty', 'mug_ale', 'mug_stout', 'bottle_empty', 
 
 export function isProficient(c: Character, w: WeaponDef): boolean {
   if (w.id === 'unarmed') return true;
-  if (w.id === 'club_improvised' || w.id.startsWith('imp:') || w.id.startsWith('prop:')) return c.feat === 'brawler' || c.cls === 'monk';
+  if (w.id === 'club_improvised' || w.id.startsWith('imp:') || w.id.startsWith('prop:')) return hasFeat(c, 'brawler') || c.cls === 'monk';
   if (c.weaponProf.includes(w.category)) return true;
   if (c.cls === 'rogue' && w.category === 'martial' && (w.finesse || w.light)) return true;
   return false;
@@ -357,7 +368,7 @@ export function unarmedDice(c: Character): string | null {
   const sizes: number[] = [];
   if (sp.weapon) sizes.push(parseInt(sp.weapon.damage.split('d')[1], 10));
   if (c.cls === 'monk') sizes.push(c.level >= 17 ? 12 : c.level >= 11 ? 10 : c.level >= 5 ? 8 : 6);
-  if (c.feat === 'brawler') sizes.push(4);
+  if (hasFeat(c, 'brawler')) sizes.push(4);
   if (!sizes.length) return null;
   return `1d${Math.max(...sizes)}`;
 }

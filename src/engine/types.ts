@@ -184,6 +184,9 @@ export interface Character {
   pronoun: 'he' | 'she' | 'they';
   options: Record<string, string>; // class/species choices: fighting style, divine order, genasi element...
   feat: string;
+  feats?: string[]; // extra feats (custom lineage)
+  customBg?: import('../data/backgrounds').BackgroundDef;
+  tools?: string[];
   look: string;
   backstory: string;
   life: Record<string, string>; // life-path results
@@ -259,12 +262,17 @@ export interface SiteState {
   near: string; // town id it hangs off
   poi?: string; // named place id
   cleared?: boolean;
+  boss?: string; // monster id override for the last room
+  campaign?: number; // campaign chapter index this site belongs to
+  descs?: string[]; // room descriptions written by a campaign
 }
 export interface Job { id: string; town: string; kind: 'clear' | 'bounty' | 'deliver' | 'fetch'; title: string; text: string; reward: number; site?: string; dest?: string; taken?: boolean; done?: boolean; paid?: boolean; posted: number; item?: string }
 export interface Front { id: string; name: string; clock: number; max: number; active: boolean; ended?: boolean; lastTick: number; omens: number[] }
 export interface Property { id: string; town: string; type: 'tavern' | 'shop' | 'farm' | 'house' | 'smithy'; name: string; upgrades: string[]; staff: string[]; cash: number; rep: number; lastDay: number; events: number }
 export interface Journey { route: string[]; legs: number[]; leg: number; day: number; dest: string }
-export interface WorldState { at: string; visited: string[]; found: string[]; sites: Record<string, SiteState>; journey: Journey | null; jobs: Job[]; fronts: Record<string, Front>; properties: Property[]; nextId: number; seed: number; renown: number; hires?: Hire[] }
+export interface WorldState { at: string; visited: string[]; found: string[]; sites: Record<string, SiteState>; journey: Journey | null; jobs: Job[]; fronts: Record<string, Front>; properties: Property[]; nextId: number; seed: number; renown: number; hires?: Hire[]; campaign?: CampaignState }
+export interface CampaignSpec { title: string; start: string; villain: string; villainTitle: string; kind: string; goal: 'stop' | 'rescue' | 'recover' | 'avenge'; target: string; chapters: number; tone: 'heroic' | 'grim' | 'comic'; level: number; seed: number }
+export interface CampaignState { id: string; title: string; chapter: number; sites: string[]; done?: boolean; spec?: CampaignSpec; started: number }
 export interface Hire { id: string; name: string; role: string; level: number; wage: number; since: number; kind: string }
 
 export interface PropState {
@@ -294,4 +302,7 @@ export interface CreationSpec {
   look: string;
   backstory: string;
   life: Record<string, string>;
+  customBg?: import('../data/backgrounds').CustomBackground;
+  lineage?: { plus2: Ability; feat: string; skill?: Skill; size: 'Small' | 'Medium' };
+  featSkills?: Skill[];
 }

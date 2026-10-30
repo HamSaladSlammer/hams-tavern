@@ -15,8 +15,17 @@ import { ensureTown, bindTownHooks, townHub, townOfRoom } from './towns';
 import { ensureSiteRooms, siteName, siteHub, registerStory, buildFoes, THEMES, type StorySite } from './sites';
 
 // ---------- state ----------
-export function newWorld(seed: number): WorldState {
-  return { at: 'breda', visited: ['breda'], found: [], sites: {}, journey: null, jobs: [], fronts: initialFronts(), properties: [], nextId: 1, seed, renown: 0 };
+/** A different world is loading: forget the rooms that belonged to the last one. */
+export function resetProcedural() {
+  for (const k of Object.keys(ROOMS)) if (k.startsWith('site:') || k.startsWith('prop:')) delete ROOMS[k];
+  for (const k of Object.keys(MAPS)) if (k.startsWith('site:') || k.startsWith('prop:')) delete MAPS[k];
+  for (const k of Object.keys(NPCS)) if (k.startsWith('hire_')) delete NPCS[k];
+  for (const k of Object.keys(ROOMS)) { const r = ROOMS[k]; if (r && /^(town:[a-z_]+:square|breda_square)$/.test(k)) r.exits = r.exits.filter((e) => !e.to.startsWith('prop:')); }
+}
+
+export function newWorld(seed: number, at = 'breda'): WorldState {
+  resetProcedural();
+  return { at, visited: [at], found: [], sites: {}, journey: null, jobs: [], fronts: initialFronts(), properties: [], nextId: 1, seed, renown: 0 };
 }
 function initialFronts(): Record<string, Front> {
   return {
@@ -59,6 +68,11 @@ function siteForPoi(s: GameState, poi: Poi): SiteState {
 }
 const hashStr = (x: string) => { let h = 2166136261; for (const ch of x) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 
+export function rebuildSite(site: SiteState) {
+  for (const k of Object.keys(ROOMS)) if (k.startsWith(`site:${site.id}:`)) delete ROOMS[k];
+  ensureSiteRooms(site, siteCleared);
+}
+
 export const townHubOf = (id: string) => (townById(id) ? townHub(id) : null);
 
 export function hubOf(s: GameState, id: string): string {
@@ -90,19 +104,19 @@ export function discover(c: Ctx, id: string, how?: string) {
   return true;
 }
 
-function newSite(c: Ctx, near: string, opts: { kind?: string; level?: number; around?: { x: number; y: number } } = {}): SiteState {
+export function newSite(c: Ctx, near: string, opts: { kind?: string; level?: number; around?: { x: number; y: number }; name?: string; boss?: string; rooms?: number; descs?: string[]; dist?: number } = {}): SiteState {
   const w = W(c);
   const base = opts.around ?? townById(near) ?? { x: 0.6, y: 0.45 };
   const region = regionAt(base.x, base.y);
   const kinds: Record<string, string[]> = { peaks: ['cave', 'barrow', 'ruin', 'mine'], mire: ['mire', 'cult', 'barrow'], fields: ['bandit_camp', 'battlefield', 'ruin', 'barrow'], coast: ['cave', 'ruin', 'bandit_camp', 'cult'], forest: ['ruin', 'cave', 'bandit_camp', 'barrow', 'mine', 'cult', 'battlefield'] };
   const kind = opts.kind ?? pick(c.rng, kinds[region]);
-  const ang = next(c.rng) * Math.PI * 2, d = 0.025 + next(c.rng) * 0.045;
+  const ang = next(c.rng) * Math.PI * 2, d = (opts.dist ?? 0.025) + next(c.rng) * 0.045;
   const x = Math.min(0.93, Math.max(0.27, base.x + Math.cos(ang) * d));
   const y = Math.min(0.88, Math.max(0.1, base.y + Math.sin(ang) * d * 1.33));
   const lvl = Math.max(1, Math.min(20, opts.level ?? (c.pc.level + die(c.rng, 3) - 2)));
   const seed = (w.seed + w.nextId * 7919) >>> 0;
   const id = `s${w.nextId++}`;
-  const site: SiteState = { id, name: siteName(seed, kind), kind, x, y, level: lvl, seed, rooms: Math.min(7, 2 + Math.ceil(lvl / 4) + die(c.rng, 2)), near };
+  const site: SiteState = { id, name: opts.name ?? siteName(seed, kind), kind, x, y, level: lvl, seed, rooms: opts.rooms ?? Math.min(7, 2 + Math.ceil(lvl / 4) + die(c.rng, 2)), near, boss: opts.boss, descs: opts.descs };
   w.sites[id] = site;
   return site;
 }
@@ -348,7 +362,10 @@ export function siteCleared(c: Ctx, site: SiteState) {
   for (const j of W(c).jobs.filter((x) => x.site === site.id && x.taken && !x.done)) { j.done = true; c.good(`Job done: ${j.title}. Collect your ${fmtMoney(j.reward)} in ${locName(c.s, j.town)}.`); }
   const story = site.poi ? STORY_SITES[site.poi] : undefined;
   story?.onClear(c);
+  CAMPAIGN_HOOK?.(c, site);
 }
+let CAMPAIGN_HOOK: ((c: Ctx, site: SiteState) => void) | null = null;
+export function bindCampaignHook(fn: (c: Ctx, site: SiteState) => void) { CAMPAIGN_HOOK = fn; }
 
 // ---------- the notice boards ----------
 export function board(c: Ctx, town: string) {
@@ -849,6 +866,7 @@ export function worldView(s: GameState): WorldViewData {
 }
 
 export function migrateWorld(s: GameState) {
+  resetProcedural();
   s.world ??= newWorld(s.rng.state ^ 0x5eed);
   s.world.fronts ??= initialFronts();
   for (const [k, v] of Object.entries(initialFronts())) s.world.fronts[k] ??= v;

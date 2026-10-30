@@ -9,6 +9,31 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.5
+
+- **Pick your story.** Six campaigns in the same open world:
+  - **The Bells of Lahti** (the original).
+  - **The Drowned Crown:** smugglers and a dead captain in Largo.
+  - **Iron and Ash:** a gun-runner selling a war, out of Tokarev.
+  - **The Frost Wyrm of Herstal.**
+  - **The Mire Below:** the thing at the bottom of the swamp.
+  - **The Velvet Knife:** a murder at court in Suomi.
+- **Endless campaigns.**
+  - **Random:** a generated campaign with a new villain, threat, goal and tone, which you can reroll before you start.
+  - **Your own:** pick the threat, villain, goal, town, tone, length and starting level (1 to 20), and the game writes the rest.
+  - **The open road:** no story at all.
+  - After any ending, say "seek a new adventure" to start another campaign with the same hero in the same world.
+- **Dice tray.** Tap **Dice** to roll any mix of d4 to d100 with modifiers, advantage and disadvantage. Pick the dice colour, number colour and finish (solid, gemstone or metal), and the colour of the mat. You can also type "roll 2d6+3". The game's own d20 rolls tumble in the corner as they happen; this can be switched off.
+- **A game master that answers.**
+  - **Conversations:** people respond to what you actually say, including small talk, directions with real travel times, opinions, jokes, flirting, requests, and questions about themselves, with yes/no answers from the oracle.
+  - **People in the crowd:** unnamed people (the barmaid, the stranger, the drunk) become real when you talk to them, and you can wink at them, hire them or hit them.
+  - **Everyday actions:** looking around, announcing things, sharpening a blade, writing a letter and saying how you feel all get real responses instead of an echo.
+- **Custom origins.**
+  - **Custom background:** three ability boosts (+2/+1 or +1/+1/+1), any feat, and two skills plus a tool, or three skills.
+  - **Custom Lineage:** +2 to one ability, a second feat of your choice, darkvision or a skill, and Small or Medium size.
+  - Skilled now grants its three extra skills.
+- **Update from inside the app.** Menu → *Check for updates* (it also checks by itself). The Android app downloads the new version and switches over without reinstalling, and your save stays where it is. Only changes to the app shell need a new APK, and the app tells you when.
+
 ## What's new in v0.4
 
 - **The world of Lahti.** Jared's map of Lahti is the World map (tap **World**). All 19 towns are real places you can travel to, each with a square, an inn with an innkeeper, a market with its own specialty stock (Tokarev Works rifles, Borschardt pistols, Largo "fish"), a watch captain and a notice board. Grog's chowder in Brumandell is as advertised.

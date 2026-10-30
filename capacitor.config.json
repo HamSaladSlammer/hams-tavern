@@ -2,5 +2,15 @@
   "appId": "com.hamsaladslammer.hamstavern",
   "appName": "Hams Tavern",
   "webDir": "dist",
-  "android": { "backgroundColor": "#17120d" }
+  "android": { "backgroundColor": "#17120d" },
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "statsUrl": "",
+      "channelUrl": "",
+      "updateUrl": "",
+      "resetWhenUpdate": true,
+      "appReadyTimeout": 15000
+    }
+  }
 }
