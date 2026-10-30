@@ -41,15 +41,15 @@ export async function checkForUpdates(notify: Notify, manual = false) {
     if (!isNative()) {
       const reg = await navigator.serviceWorker?.getRegistration?.();
       await reg?.update().catch(() => undefined);
-      notify(`Version ${remote.version} is out. Tap to update.`, () => location.reload());
+      notify(`Hams Tavern ${remote.version} (build ${remote.build}) is ready.`, () => { void webInstall(); });
       return;
     }
     const api = await shellNativeApi();
     if (remote.nativeApi > api) {
-      notify(`Version ${remote.version} needs a new app download. Tap to get it (your save stays on this phone).`, () => window.open(`${SITE}hams-tavern.apk`, '_system'));
+      notify(`Hams Tavern ${remote.version} needs a new app download. Your save stays on this phone.`, () => window.open(`${SITE}hams-tavern.apk`, '_system'));
       return;
     }
-    notify(`Version ${remote.version} is ready. Tap to update now.`, () => { void install(remote, notify); });
+    notify(`Hams Tavern ${remote.version} (build ${remote.build}) is ready to install.`, () => { void install(remote, notify); });
   } finally { busy = false; }
 }
 
@@ -61,6 +61,19 @@ async function install(remote: RemoteVersion, notify: Notify) {
     const b = await CapacitorUpdater.download({ url, version: `${remote.version}-${remote.build}` });
     await CapacitorUpdater.set({ id: b.id });
   } catch {
-    notify('The update didn\'t download. Tap to get the full app instead.', () => window.open(`${SITE}hams-tavern.apk`, '_system'));
+    notify('The update didn\'t download. You can get the full app instead.', () => window.open(`${SITE}hams-tavern.apk`, '_system'));
   }
+}
+
+/** On the web: let the new service worker take over, then reload into the new version. */
+async function webInstall() {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    if (reg) {
+      await reg.update().catch(() => undefined);
+      const w = reg.installing ?? reg.waiting;
+      if (w && w.state !== 'activated') await Promise.race([new Promise((res) => w.addEventListener('statechange', () => { if (w.state === 'activated') res(0); })), new Promise((res) => setTimeout(res, 8000))]);
+    }
+  } catch { /* reload anyway */ }
+  location.reload();
 }

@@ -310,7 +310,7 @@ function settings(body: HTMLElement, reopen: () => void) {
   body.appendChild(opt('Dice rolls in the story', 'dice', [['show', 'Show'], ['hide', 'Hide']], reopen));
   body.appendChild(opt('Battle map', 'map', [['on', 'Always'], ['combat', 'In fights'], ['off', 'Off']], reopen));
   body.appendChild(menuButton('Dice and mat colours…', () => { panel.hidden = true; tray.open(); tray.showLook(); }));
-  body.appendChild(menuButton('Check for updates', () => { panel.hidden = true; void checkForUpdates(toast, true); }));
+  body.appendChild(menuButton('Check for updates', () => { panel.hidden = true; void checkForUpdates(updateBanner, true); }));
 }
 
 /** A yes/no question in the panel. */
@@ -402,14 +402,30 @@ if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:')
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
       nw?.addEventListener('statechange', () => {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) toast('A new version is ready. Tap to update.', () => location.reload());
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) updateBanner('A new version of Hams Tavern is ready.', () => location.reload());
       });
     });
   }).catch(() => { /* offline support unavailable */ });
 }
 
 refresh();
-window.setTimeout(() => { if (navigator.onLine !== false) void checkForUpdates(toast); }, 4000);
+// ---------- "an update is ready" banner ----------
+let bannerShownFor = '';
+function updateBanner(msg: string, onTap?: () => void) {
+  if (!onTap) { toast(msg); return; }
+  if (bannerShownFor === msg) return;
+  bannerShownFor = msg;
+  let el = document.getElementById('update-banner');
+  if (!el) { el = document.createElement('div'); el.id = 'update-banner'; el.className = 'update-banner'; el.setAttribute('role', 'alert'); $('app').appendChild(el); }
+  el.innerHTML = `<span class="ub-ico">⬆</span><span class="ub-msg"></span><button type="button" class="ub-go">Update</button><button type="button" class="ub-later" aria-label="Later">Later</button>`;
+  el.querySelector('.ub-msg')!.textContent = msg;
+  el.hidden = false;
+  el.querySelector<HTMLButtonElement>('.ub-go')!.onclick = () => { el!.hidden = true; save(); onTap(); };
+  el.querySelector<HTMLButtonElement>('.ub-later')!.onclick = () => { el!.hidden = true; };
+}
+const autoCheck = () => { if (navigator.onLine !== false) void checkForUpdates(updateBanner); };
+window.setTimeout(autoCheck, 1200);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheck(); });
 
 async function nativeBars(color: string) {
   if (!(window as any).Capacitor?.isNativePlatform?.()) return;
@@ -429,5 +445,6 @@ async function setupNative() {
       App.minimizeApp();
     });
     App.addListener('pause', () => save());
+    App.addListener('resume', () => autoCheck());
   } catch { /* not available */ }
 }
