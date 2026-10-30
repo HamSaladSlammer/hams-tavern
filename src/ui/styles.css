@@ -87,14 +87,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; }
 .panel-head h2 { font-family: var(--display); font-weight: 400; margin: 0; color: var(--gold); }
 #panel-close { background: none; border: 0; font-size: 1.2em; color: var(--soft); }
-.menu-btn { display: block; width: 100%; text-align: left; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 8px 0; }
+.menu-btn { display: block; width: 100%; text-align: left; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 8px 0; color: var(--ink); font: inherit; }
 .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
 .row button { flex: 1; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: .85em; }
 .row button.on { border-color: var(--accent); color: var(--accent); }
 .small { font-size: .78em; color: var(--dim); }
 
-.title-screen { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 30%, #3a2a17 0%, var(--bg) 70%); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
-:root[data-theme='light'] .title-screen { background: radial-gradient(ellipse at 50% 30%, #f6eedb 0%, var(--bg) 70%); }
+.title-screen { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--accent) 22%, var(--bg)) 0%, var(--bg) 70%); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
 .title-card { text-align: center; max-width: 360px; width: 100%; }
 .title-card h1 { font-family: var(--display); font-weight: 400; font-size: 3em; margin: 6px 0 0; color: var(--gold); line-height: 1; }
 .subtitle { font-family: var(--display); font-size: 1.4em; margin: 6px 0 14px; }
@@ -309,3 +308,25 @@ svg text { fill: var(--die-ink); font-family: var(--display), Georgia, serif; fo
 .actitem.attack { color: var(--blood); }
 .actitem.prompt { grid-column: 1 / -1; color: var(--gold); font-style: italic; background: none; border: 1px dashed var(--line); }
 @media (min-width: 700px) { .actdrop { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---------- settings, themes, saves ---------- */
+.panel.over-title { z-index: 26; }
+.menu-h { font-family: var(--display); font-weight: 400; color: var(--gold); margin: 16px 0 6px; font-size: 1.15em; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.menu-btn.danger { border-color: color-mix(in srgb, var(--blood) 60%, var(--line)); color: var(--blood); }
+.menu-btn.small-btn { width: auto; padding: 6px 12px; margin: 0; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; margin: 4px 0 10px; }
+.theme-sw { display: flex; align-items: center; gap: 4px; border: 2px solid; border-radius: 10px; padding: 8px; font: 600 .78em var(--serif); text-align: left; min-height: 40px; }
+.theme-sw .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.theme-sw span:last-child { margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.color-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 10px; }
+.color-pick { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 4px 10px 4px 4px; background: var(--bg2); font-size: .85em; }
+.color-pick input { width: 32px; height: 28px; border: 0; padding: 0; background: none; cursor: pointer; }
+.warn { color: var(--blood); }
+.confirm-row { display: flex; gap: 8px; margin-top: 12px; }
+.confirm-row .menu-btn { flex: 1; }
+.ghost-btn { display: block; width: 100%; margin: 8px 0 0; background: none; border: 1px solid var(--line); color: var(--soft); border-radius: 12px; padding: 10px; font: inherit; }
+.slots-h { font: .72em var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 6px 0 2px; text-align: left; }
+.slot-row { display: flex; gap: 6px; }
+.slot-row .slot { flex: 1; }
+.slot.current { border-color: var(--accent); }
+.slot-del { flex: none; width: 44px; border: 1px solid var(--line); background: var(--bg2); border-radius: 10px; color: var(--blood); font-size: 1em; }

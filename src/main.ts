@@ -5,6 +5,7 @@ import { openForge } from './ui/forge';
 import { openCampaigns } from './ui/campaigns';
 import { WorldMap } from './ui/worldmap';
 import { DiceTray, DEFAULT_LOOK, d20Of, type DiceLook } from './ui/dice';
+import { THEMES, applyTheme, paletteFor, luminance, type CustomColours } from './ui/themes';
 import { worldView } from './world';
 import type { GameState, LogLine } from './engine/types';
 import { backend, SAVE_KEY, PREFS_KEY } from './ui/storage';
@@ -21,14 +22,15 @@ let state: GameState = newState();
 const history: string[] = [];
 let histIdx = -1;
 
-interface Prefs { theme: 'dark' | 'light'; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; look?: DiceLook }
+interface Prefs { theme: string; size: 'small' | 'normal' | 'large'; dice: 'show' | 'hide'; map: 'on' | 'combat' | 'off'; look?: DiceLook; colors?: CustomColours }
 let prefs: Prefs = { theme: 'dark', size: 'normal', dice: 'show', map: 'on' };
 try { prefs = { ...prefs, ...JSON.parse(backend.load(PREFS_KEY) ?? '{}') }; } catch { /* defaults */ }
 function applyPrefs() {
   const r = document.documentElement;
-  r.dataset.theme = prefs.theme; r.dataset.size = prefs.size; r.dataset.dice = prefs.dice;
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', prefs.theme === 'light' ? '#dfd2b4' : '#17120d');
+  r.dataset.size = prefs.size; r.dataset.dice = prefs.dice;
+  const pal = applyTheme(prefs.theme, prefs.colors ?? {});
   backend.save(PREFS_KEY, JSON.stringify(prefs));
+  void nativeBars(pal.bg2);
 }
 applyPrefs();
 
@@ -189,12 +191,22 @@ function renderSlots() {
   const cur = readSlot(slot);
   cont.hidden = !cur;
   if (cur) { cont.textContent = `Continue: ${cur.pc!.name}`; cont.onclick = () => loadSlot(slot); }
-  for (let i = 0; i < SLOTS; i++) {
-    if (i === slot) continue;
-    const g = readSlot(i); if (!g) continue;
-    const b = document.createElement('button'); b.className = 'slot'; b.textContent = slotLabel(g); b.onclick = () => loadSlot(i); wrap.appendChild(b);
+  const saved = Array.from({ length: SLOTS }, (_, i) => [i, readSlot(i)] as const).filter(([, g]) => g);
+  if (saved.length) { const h = document.createElement('div'); h.className = 'slots-h'; h.textContent = `Saved campaigns (${saved.length}/${SLOTS})`; wrap.appendChild(h); }
+  for (const [i, g] of saved) {
+    const row = document.createElement('div'); row.className = 'slot-row';
+    const b = document.createElement('button'); b.className = `slot${i === slot ? ' current' : ''}`; b.textContent = slotLabel(g!); b.onclick = () => loadSlot(i);
+    const d = document.createElement('button'); d.className = 'slot-del'; d.setAttribute('aria-label', `Delete ${g!.pc!.name}`); d.textContent = '🗑';
+    d.onclick = () => confirmPanel('Delete this campaign?', `This permanently deletes ${describeSlot(g!)}. It can't be undone.`, 'Delete it', () => deleteSlot(i), true);
+    row.append(b, d); wrap.appendChild(row);
   }
 }
+$('btn-settings').onclick = () => {
+  const body = $('panel-body'); body.innerHTML = '';
+  $('panel-title').textContent = 'Settings';
+  settings(body, () => $('btn-settings').click());
+  panel.classList.add('over-title'); panel.hidden = false;
+};
 renderSlots();
 $('btn-new').onclick = () => {
   const empty = Array.from({ length: SLOTS }, (_, i) => i).find((i) => !readSlot(i));
@@ -243,36 +255,107 @@ document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => (b.o
   if (b.dataset.panel === 'map') { prefs.map = mapEl.hidden ? 'on' : (state.combat ? 'off' : 'combat'); applyPrefs(); refreshMap(); return; }
   openPanel(b.dataset.panel!);
 }));
-$('panel-close').onclick = () => (panel.hidden = true);
-panel.addEventListener('click', (e) => { if (e.target === panel) panel.hidden = true; });
+$('panel-close').onclick = () => { panel.hidden = true; panel.classList.remove('over-title'); };
+panel.addEventListener('click', (e) => { if (e.target === panel) { panel.hidden = true; panel.classList.remove('over-title'); } });
 
-function opt<K extends keyof Prefs>(label: string, key: K, values: [Prefs[K], string][]) {
+function opt<K extends keyof Prefs>(label: string, key: K, values: [Prefs[K], string][], reopen: () => void = () => openPanel('menu')) {
   const wrap = document.createElement('div');
   const l = document.createElement('div'); l.className = 'small'; l.textContent = label; wrap.appendChild(l);
   const row = document.createElement('div'); row.className = 'row';
   for (const [v, name] of values) {
     const b = document.createElement('button'); b.textContent = name; if (prefs[key] === v) b.className = 'on';
-    b.onclick = () => { prefs[key] = v; applyPrefs(); refreshMap(); openPanel('menu'); };
+    b.onclick = () => { prefs[key] = v; applyPrefs(); refreshMap(); reopen(); };
     row.appendChild(b);
   }
   wrap.appendChild(row);
   return wrap;
 }
 
-function menuButton(label: string, fn: () => void) {
-  const b = document.createElement('button'); b.className = 'menu-btn'; b.textContent = label; b.onclick = fn; return b;
+function menuButton(label: string, fn: () => void, cls = '') {
+  const b = document.createElement('button'); b.className = `menu-btn ${cls}`.trim(); b.textContent = label; b.onclick = fn; return b;
+}
+function section(body: HTMLElement, title: string) { const h = document.createElement('h3'); h.className = 'menu-h'; h.textContent = title; body.appendChild(h); }
+
+/** Settings, shared by the title screen and the in-game menu. */
+function settings(body: HTMLElement, reopen: () => void) {
+  const wrap = document.createElement('div');
+  const l = document.createElement('div'); l.className = 'small'; l.textContent = 'Colour theme'; wrap.appendChild(l);
+  const grid = document.createElement('div'); grid.className = 'theme-grid';
+  for (const t of THEMES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `theme-sw${prefs.theme === t.id ? ' on' : ''}`;
+    b.style.background = t.p.bg; b.style.color = t.p.ink; b.style.borderColor = prefs.theme === t.id ? t.p.accent : t.p.line;
+    b.innerHTML = `<span class="dot" style="background:${t.p.accent}"></span><span class="dot" style="background:${t.p.gold}"></span><span>${t.name}</span>`;
+    b.onclick = () => { prefs.theme = t.id; applyPrefs(); reopen(); };
+    grid.appendChild(b);
+  }
+  wrap.appendChild(grid);
+  body.appendChild(wrap);
+  const cur = paletteFor(prefs.theme, prefs.colors ?? {});
+  const own = document.createElement('div');
+  own.innerHTML = `<div class="small">Your own colours (on top of the theme)</div><div class="color-row">
+    <label class="color-pick"><input type="color" data-c="accent" value="${cur.accent}"><span>Accent</span></label>
+    <label class="color-pick"><input type="color" data-c="bg" value="${cur.bg}"><span>Background</span></label>
+    <label class="color-pick"><input type="color" data-c="ink" value="${cur.ink}"><span>Text</span></label>
+    <button type="button" class="menu-btn small-btn" data-reset="1"${prefs.colors && Object.keys(prefs.colors).length ? '' : ' disabled'}>Reset</button></div>`;
+  own.querySelectorAll<HTMLInputElement>('input[type=color]').forEach((inp) => {
+    inp.oninput = () => { prefs.colors = { ...(prefs.colors ?? {}), [inp.dataset.c!]: inp.value }; applyPrefs(); };
+    inp.onchange = () => reopen();
+  });
+  own.querySelector<HTMLButtonElement>('[data-reset]')!.onclick = () => { prefs.colors = {}; applyPrefs(); reopen(); };
+  body.appendChild(own);
+  if (luminance(cur.bg) > 0.5 === luminance(cur.ink) > 0.5) { const w = document.createElement('p'); w.className = 'small warn'; w.textContent = 'Your text and background are both light or both dark, so the text may be hard to read.'; body.appendChild(w); }
+  body.appendChild(opt('Text size', 'size', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']], reopen));
+  body.appendChild(opt('Dice rolls in the story', 'dice', [['show', 'Show'], ['hide', 'Hide']], reopen));
+  body.appendChild(opt('Battle map', 'map', [['on', 'Always'], ['combat', 'In fights'], ['off', 'Off']], reopen));
+  body.appendChild(menuButton('Dice and mat colours…', () => { panel.hidden = true; tray.open(); tray.showLook(); }));
+  body.appendChild(menuButton('Check for updates', () => { panel.hidden = true; void checkForUpdates(toast, true); }));
+}
+
+/** A yes/no question in the panel. */
+function confirmPanel(title: string, text: string, yes: string, onYes: () => void, overTitle = false) {
+  const body = $('panel-body');
+  body.innerHTML = '';
+  $('panel-title').textContent = title;
+  const p = document.createElement('p'); p.textContent = text; body.appendChild(p);
+  const row = document.createElement('div'); row.className = 'confirm-row';
+  row.appendChild(menuButton('Cancel', () => { panel.hidden = true; panel.classList.remove('over-title'); }));
+  row.appendChild(menuButton(yes, () => { panel.hidden = true; panel.classList.remove('over-title'); onYes(); }, 'danger'));
+  body.appendChild(row);
+  panel.classList.toggle('over-title', overTitle);
+  panel.hidden = false;
+}
+
+function deleteSlot(i: number) {
+  backend.remove(slotKey(i));
+  if (i === slot) {
+    state = newState();
+    logEl.innerHTML = '';
+    const next = Array.from({ length: SLOTS }, (_, k) => k).find((k) => k !== i && readSlot(k));
+    slot = next ?? 0;
+    try { backend.save('hams.slot', String(slot)); } catch { /* ignore */ }
+  }
+  toast('Campaign deleted.');
+  $('title').hidden = false;
+  renderSlots();
+  refresh();
+}
+function describeSlot(g: GameState) {
+  const camp = g.world?.campaign?.title;
+  return `${g.pc!.name}, level ${g.pc!.level}${camp ? `, in ${camp}` : ''}`;
 }
 
 function menu(body: HTMLElement) {
-  body.appendChild(opt('Theme', 'theme', [['dark', 'Tavern (dark)'], ['light', 'Parchment']]));
-  body.appendChild(opt('Text size', 'size', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']]));
-  body.appendChild(opt('Dice rolls', 'dice', [['show', 'Show'], ['hide', 'Hide']]));
-  body.appendChild(opt('Battle map', 'map', [['on', 'Always'], ['combat', 'In fights'], ['off', 'Off']]));
-  body.appendChild(menuButton('Check for updates', () => { panel.hidden = true; void checkForUpdates(toast, true); }));
+  section(body, 'Game');
   body.appendChild(menuButton('How to play', () => { panel.hidden = true; send('help'); }));
+  body.appendChild(menuButton('Back to the title screen (switch character)', () => { panel.hidden = true; save(); $('title').hidden = false; renderSlots(); }));
   body.appendChild(menuButton('Export save (for bug reports or another device)', exportSave));
   body.appendChild(menuButton('Import save', importSave));
-  body.appendChild(menuButton('Switch character (save slots)', () => location.reload()));
+  if (state.pc) body.appendChild(menuButton('Delete this campaign…', () => confirmPanel('Delete this campaign?', `This permanently deletes ${describeSlot(state)}. It can't be undone. (Export the save first if you might want it back.)`, 'Delete it', () => deleteSlot(slot)), 'danger'));
+  section(body, 'Settings');
+  settings(body, () => openPanel('menu'));
+  section(body, 'About');
   const about = document.createElement('div'); about.className = 'small';
   about.innerHTML = `<p><b>Hams Tavern: The Bells of Lahti</b> v${VERSION}${BUILD ? ` (build ${BUILD})` : ''}. A solo fantasy RPG with an offline game master. World and story © Jared ("HamSaladSlammer").</p>
   <p>This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.</p>
@@ -328,17 +411,18 @@ if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:')
 refresh();
 window.setTimeout(() => { if (navigator.onLine !== false) void checkForUpdates(toast); }, 4000);
 
+async function nativeBars(color: string) {
+  if (!(window as any).Capacitor?.isNativePlatform?.()) return;
+  try { const { StatusBar, Style } = await import('@capacitor/status-bar'); await StatusBar.setBackgroundColor({ color }); await StatusBar.setStyle({ style: luminance(color) > 0.5 ? Style.Light : Style.Dark }); } catch { /* not available */ }
+}
+
 async function setupNative() {
   void nativeReady();
-  try {
-    const { StatusBar, Style } = await import('@capacitor/status-bar');
-    await StatusBar.setBackgroundColor({ color: prefs.theme === 'light' ? '#dfd2b4' : '#17120d' });
-    await StatusBar.setStyle({ style: prefs.theme === 'light' ? Style.Light : Style.Dark });
-  } catch { /* not available */ }
+  void nativeBars(paletteFor(prefs.theme, prefs.colors ?? {}).bg2);
   try {
     const { App } = await import('@capacitor/app');
     App.addListener('backButton', () => {
-      if (!panel.hidden) { panel.hidden = true; return; }
+      if (!panel.hidden) { panel.hidden = true; panel.classList.remove('over-title'); return; }
       if (world.isOpen) { world.close(); return; }
       if (tray.isOpen) { tray.close(); return; }
       if (!$('forge').hidden) { $('forge').hidden = true; $('title').hidden = false; return; }

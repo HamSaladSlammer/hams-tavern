@@ -75,6 +75,7 @@ export class DiceTray {
   get isOpen() { return !this.root.hidden; }
   open() { this.root.hidden = false; this.render(); }
   close() { this.root.hidden = true; }
+  showLook() { const d = this.root.querySelector('details'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); } }
 
   /** Roll an expression from the text box ("/roll 2d6+3"). */
   rollText(expr: string) {

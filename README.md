@@ -32,6 +32,8 @@ You can also open the web link in Chrome and choose **Add to Home screen**.
   - **Custom background:** three ability boosts (+2/+1 or +1/+1/+1), any feat, and two skills plus a tool, or three skills.
   - **Custom Lineage:** +2 to one ability, a second feat of your choice, darkvision or a skill, and Small or Medium size.
   - Skilled now grants its three extra skills.
+- **Colours and settings.** Nine colour themes (Tavern, Parchment, Midnight, Thornwood, Blood Moon, Ash, Northern Ocean, Herstal Snow, High contrast), plus your own accent, background and text colours. Settings are on the title screen too.
+- **Delete a campaign** from the in-game Menu, or with the 🗑 next to any save on the title screen.
 - **Action bar.** Talk, Move, Do and Me dropdowns (and Fight in combat) list everything that makes sense right now, including the people around you, the ways out and the things you can do. Typing anything you like still works.
 - **Update from inside the app.** Menu → *Check for updates* (it also checks by itself). The Android app downloads the new version and switches over without reinstalling, and your save stays where it is. Only changes to the app shell need a new APK, and the app tells you when.
 
