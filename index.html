@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#17120d" />
+  <meta name="description" content="Hams Tavern: The Bells of Lahti — a solo fantasy RPG with an offline game master." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Hams Tavern</title>
+  <script type="module" crossorigin src="./assets/index-C-_OKW_e.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CdRhyr-s.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="where"><span id="place">Hams Tavern</span><span id="clock"></span></div>
+      <div class="stats" id="stats" hidden>
+        <div class="hp"><div class="hpbar"><div id="hpfill"></div></div><span id="hptext"></span></div>
+        <span class="pill" id="ac"></span><span class="pill" id="lvl"></span><span class="pill" id="slots" hidden></span><span class="pill gold" id="gold"></span>
+      </div>
+    </header>
+
+    <section id="map" class="map" hidden></section>
+    <main id="log" aria-live="polite"></main>
+
+    <section class="controls">
+      <div id="chips" class="chips"></div>
+      <form id="form" autocomplete="off">
+        <input id="input" type="text" enterkeyhint="send" placeholder="What do you do?" aria-label="What do you do?" />
+        <button type="submit" id="send" aria-label="Send">➤</button>
+      </form>
+      <nav class="tabs">
+        <button data-panel="world">World</button>
+        <button data-panel="map">Map</button>
+        <button data-panel="dice">Dice</button>
+        <button data-panel="sheet">Sheet</button>
+        <button data-panel="inventory">Pack</button>
+        <button data-panel="journal">Journal</button>
+        <button data-panel="menu">Menu</button>
+      </nav>
+    </section>
+
+    <div id="panel" class="panel" hidden>
+      <div class="panel-inner">
+        <div class="panel-head"><h2 id="panel-title"></h2><button id="panel-close" aria-label="Close">✕</button></div>
+        <div id="panel-body"></div>
+      </div>
+    </div>
+
+    <div id="title" class="title-screen">
+      <div class="title-card">
+        <div class="bell" aria-hidden="true">🔔</div>
+        <h1>Hams Tavern</h1>
+        <p class="subtitle">The Bells of Lahti</p>
+        <p class="tagline">Peace has a short memory, and the dead have a long one.</p>
+        <button id="btn-continue" class="primary" hidden>Continue</button>
+        <button id="btn-new" class="primary">New game</button>
+        <button id="btn-settings" class="ghost-btn">⚙ Settings</button>
+        <a id="get-apk" class="apk" href="https://hamsaladslammer.github.io/hams-tavern/hams-tavern.apk">Get the Android app</a>
+        <p class="ver">v<span id="ver"></span> · playtest build · works offline</p>
+      </div>
+    </div>
+    <div id="world" class="world" hidden></div>
+    <div id="dicetray" class="dicetray" hidden></div>
+    <div id="forge" class="forge" hidden></div>
+    <div id="toast" class="toast" hidden></div>
+  </div>
+</body>
+</html>
