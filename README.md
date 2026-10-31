@@ -9,6 +9,10 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.7.1: tablets
+
+- The app now turns with your tablet. In landscape, the battle map sits on the left and the story and controls on the right; the sheet, pack and journal slide in from the side, and the dice tray opens in the middle. Portrait tablets get a wider column, a taller map and slightly larger text.
+
 ## What's new in v0.7: your dice, and people who react
 
 - **You roll your own checks.** When something you try needs a check, the game stops and asks: "Roll a Deception check: d20 +3." Tap **Roll** to throw it on the dice tray, or type what your own d20 shows ("14", "nat 20", "9 and 15" with advantage). Say "cancel" to back out. Nothing happens to the world until you roll. Settings → *Skill checks and saves* switches back to automatic rolls.
