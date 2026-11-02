@@ -22,6 +22,7 @@ import * as DM from './dm';
 import * as Campaigns from '../world/campaigns';
 import * as Lore from '../lore';
 import * as Mind from '../mind';
+import * as U from '../understand';
 import * as Attempts from './attempts';
 import { senses } from './senses';
 import { townOfRoom } from '../world/towns';
@@ -412,8 +413,13 @@ function talk(c: Ctx, npcName?: string, topic?: string) {
   if (c.s.talkingTo !== np.id && !topic) { c.s.talkingTo = np.id; np.greet(c); mem.met = true; listTopics(c, np); return; }
   c.s.talkingTo = np.id;
   if (!mem.met) { np.greet(c); mem.met = true; }
-  if (topic) answerTopic(c, np, topic);
+  if (topic) { const T = talkState(c, np.id); T.turns += 1; respondOne(c, np, U.fixTypos(U.normalise(topic), presentNpcs(c).flatMap((id) => NPCS[id]?.names ?? []))); }
   else listTopics(c, np);
+}
+function talkState(c: Ctx, id: string): U.Talk {
+  const T = (c.s.talk ??= U.newTalk());
+  if (T.with !== id) { T.with = id; T.heard = []; }
+  return T;
 }
 
 function listTopics(c: Ctx, np: Npc) {
@@ -442,7 +448,7 @@ function answerTopic(c: Ctx, np: Npc, text: string): boolean {
   // The lore brain answers when you name something more specifically than any scripted line does.
   const lt = Lore.topicOf(text, (c.flag('lore_focus') as string) || null);
   const handWritten = !/_keeper$|_merchant$|_watch$|^x:|^hire_/.test(np.id);
-  const loreFirst = !!lt && lt.ask !== 'opinion' && (!best || GENERIC_KEYS.has(best.key) || (!!lt.alias && lt.alias.length > best.key.length && !(handWritten && new RegExp(`\\b${best.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lt.alias))));
+  const loreFirst = !!lt && lt.ask !== 'opinion' && (!best || GENERIC_KEYS.has(best.key) || (!handWritten && ['town', 'bell', 'trouble'].includes(best.topic.id)) || (!!lt.alias && lt.alias.length > best.key.length && !(handWritten && new RegExp(`\\b${best.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lt.alias))));
   if (loreFirst && loreAnswer(c, np, lt!, text)) return true;
   if (best) { best.topic.say(c); c.npc(np.id).topicsSeen.push(best.topic.id); if (lt) c.set('lore_focus', lt.id); return true; }
   if (lt && lt.ask === 'opinion') { DM.smalltalk(c, W, np, text); c.set('lore_focus', lt.id); return false; }
@@ -510,7 +516,7 @@ function say(c: Ctx, text: string, to?: string) {
   // who is it aimed at?
   let np: Npc | null = null;
   if (to) np = matchNpc(c, to);
-  if (!np && sp.addressee) np = matchNpc(c, sp.addressee);
+  if (!np && sp.addressee && !(/^(and|what about|how about|what of)\b/i.test(text.trim()) && c.s.talkingTo && present.includes(c.s.talkingTo))) np = matchNpc(c, sp.addressee);
   if (!np && c.s.talkingTo && present.includes(c.s.talkingTo)) np = NPCS[c.s.talkingTo];
   if (!np) { const ppl = present.filter((id) => id !== 'kettle'); if (ppl.length === 1) np = NPCS[ppl[0]]; else if (ppl.includes('squib') && c.s.loc === 'tavern') np = NPCS.squib; }
   if (c.s.combat) {
@@ -528,14 +534,50 @@ function say(c: Ctx, text: string, to?: string) {
   if (!np) { c.narr(pick(c.rng, ['Nobody answers.', 'The words hang in the air.'])); return; }
   c.s.talkingTo = np.id;
   const mem = c.npc(np.id);
-  const greeting = /^(hello|hi|hey|hiya|howdy|greetings|good (morning|evening|afternoon|day)|yo|sup|what'?s up|evening|morning|oi|ahoy)\b/i.test(text.trim());
   if (np.id === 'squib' && mem.banned) { answerTopic(c, np, text); return; }
+  // Phase 2: understand it in context
+  const T = talkState(c, np.id);
+  T.turns += 1;
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const clean = U.fixTypos(U.normalise(text), present.flatMap((id) => NPCS[id]?.names ?? []));
+  let parts = U.clauses(clean).map((p) => p.replace(new RegExp(`^(?:hey |oi |so |well )?(?:${np.names.map(esc).join('|')})[,!:]?\\s+(?=\\S)`, 'i'), '').trim()).filter(Boolean);
+  const greeting = parts.length > 0 && U.isGreeting(parts[0]);
   Mind.beat(c, W, np);
-  if (!mem.met || greeting) { np.greet(c); mem.met = true; if (greeting && text.trim().split(/\s+/).length <= 3) { listTopics(c, np); return; } }
-  const bt = bestTopic(c, np, text);
+  if (!mem.met || greeting) {
+    np.greet(c); mem.met = true;
+    if (greeting) parts = parts.slice(1);
+    if (!parts.length) { if (greeting) listTopics(c, np); return; }
+  }
+  for (const part of parts.slice(0, 3)) respondOne(c, np, part);
+}
+
+/** Answer one thing said to someone, using the conversation so far. */
+function respondOne(c: Ctx, np: Npc, text: string) {
+  const T = c.s.talk!;
+  c.set('reply_known', (c.s.loreKnown ?? []).length);
+  const mq = U.memoryQuestion(text);
+  if (mq) { Mind.recallYou(c, W, np, mq); return; }
+  const pb = U.probe(text);
+  if (pb && pb !== 'more' && T.lastEntity && Mind.probeAnswer(c, W, np, pb, T.lastEntity, T.lastFact)) { afterReply(c, T); return; }
+  const r = U.resolve(text, T);
+  let q = r.kind === 'ellipsis' || r.kind === 'pronoun' ? r.text : text;
+  const nm = q.match(/^(?:i'?m|i am|it'?s|this is|the name'?s)\s+([a-z'-]{2,16})[.!]?$/i);
+  if (nm && U.looksLikeName(nm[1])) q = `my name is ${nm[1]}`;
+  if (/\?$|^(who|what|where|when|why|how)\b/.test(q) && U.isRepeat(T, q)) c.narr(pick(c.rng, [`${np.name} gives you a look. "You asked me that already."`, `"Again?" ${np.name} sighs.`, `"Like I said," says ${np.name}.`]));
+  for (const m of Lore.findEntities(q)) U.noteFocus(T, m.id, 'you');
+  if (T.focus[0]) c.set('lore_focus', T.focus[0].id);
+  const bt = bestTopic(c, np, q);
   const handWritten = !/_keeper$|_merchant$|_watch$|^x:|^hire_/.test(np.id);
-  if (Mind.respond(c, W, np, text, { scripted: handWritten && !!bt && !GENERIC_KEYS.has(bt.key) })) return;
-  answerTopic(c, np, text);
+  if (!Mind.respond(c, W, np, q, { scripted: handWritten && !!bt && !GENERIC_KEYS.has(bt.key) })) answerTopic(c, np, q);
+  afterReply(c, T);
+}
+/** Remember what their answer was about, so "why?" and "where is it?" work next. */
+function afterReply(c: Ctx, T: U.Talk) {
+  const k = c.s.loreKnown ?? [];
+  const before = Number(c.flag('reply_known') ?? k.length);
+  if (k.length > before) { const f = Lore.FACT[k[k.length - 1]]; T.lastFact = f?.id ?? null; T.lastEntity = f?.about[0] ?? T.lastEntity; U.noteFocus(T, f?.about[0], 'them'); }
+  const lf = c.flag('lore_focus') as string;
+  if (lf) { T.lastEntity = lf; U.noteFocus(T, lf, 'them'); }
 }
 
 // ---------- shops ----------
@@ -1163,6 +1205,7 @@ function dispatch(c: Ctx, it: Intent, raw: string) {
     if (/^(challenge|ask) (someone|somebody|anyone|anybody|a patron|a stranger) to (an? )?arm[- ]?wrestl/.test(low)) { if (presentNpcs(c).includes('dwarves')) { say(c, 'arm wrestle', 'dwarves'); return; } const x = DM.spawnExtra(c, 'patron'); if (x) { const ok = c.check('athletics', 12); c.say(x.id, ok ? `${x.name} takes your hand, strains, and goes over with a thump. "Again!" Nobody lets them.` : `${x.name} grins, plants an elbow, and slams your hand flat. "Next!"`); if (ok) c.money(5); return; } }
   }
   if (Attempts.attempt(c, W, raw)) return;
+  if (!s.combat && s.talkingTo && presentNpcs(c).includes(s.talkingTo) && U.memoryQuestion(U.normalise(raw))) { say(c, raw); return; }
   if (!s.combat && (DM.thought(c, W, raw) || DM.lookAround(c, W, raw) || DM.announce(c, W, raw) || DM.pastime(c, W, raw))) return;
   { const m = raw.match(/^(?:choose|become|follow|swear|take up|i choose)\s+(?:the\s+|a\s+|an\s+|to\s+)?(?:path of |college of |domain of |circle of |oath of |way of |school of )?(.+?)\s*(?:subclass)?$/i);
     if (m && c.pc.level >= 3 && !c.pc.subclass) { const r = chooseSubclass(c.pc, m[1]); if (typeof r !== 'string') { for (const l of r) c.good(l); return; } if (/^choose/i.test(raw)) { c.sys(r); return; } } }

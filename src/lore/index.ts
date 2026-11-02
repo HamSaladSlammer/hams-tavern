@@ -102,7 +102,7 @@ export type Ask = 'where' | 'who' | 'what' | 'more' | 'how' | 'why' | 'opinion' 
 export function askKind(text: string): Ask {
   const t = text.toLowerCase().trim();
   if (/^(what else|tell me more|more|go on|and\??$|anything else|keep going|continue|what more|say more)/.test(t)) return 'more';
-  if (/\bwhere\b|how (do|can|would|should) (i|we|you|one) (get|reach|find)|how far|which way|directions? to|way to\b|get there/.test(t)) return 'where';
+  if (/\bwhere\b|how (do|can|would|should) (i|we|you|one) (get|reach|find)|how far|which way|directions? to|way to\b|get there|^is (.+) far\b|how long (to get|does it take|a walk|a ride)/.test(t)) return 'where';
   if (/what do you (think|reckon|make)|how do you feel|do you like|your (opinion|take)|what'?s your view/.test(t)) return 'opinion';
   if (/^(who|whose)\b/.test(t)) return 'who';
   if (/^why\b/.test(t)) return 'why';

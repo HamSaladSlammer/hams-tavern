@@ -3,7 +3,7 @@
 
 export interface EvalCase {
   id: string;
-  cat: 'lore' | 'small' | 'action' | 'statement' | 'followup' | 'scene' | 'quest' | 'opinion' | 'check' | 'react';
+  cat: 'lore' | 'small' | 'action' | 'statement' | 'followup' | 'scene' | 'quest' | 'opinion' | 'check' | 'react' | 'convo';
   roll?: string; // the check a good game master would ask for (skill name, lower case)
   where: string; // 'bells' (Breda tavern) or a town id (its inn)
   talk?: string; // who you're talking to first
@@ -167,5 +167,40 @@ const REACT: [string, string[], string, string[]][] = [
   ['squib', [], 'what time is it?', ['monday', 'may', 'morning', 'afternoon']],
 ];
 REACT.forEach(([talk, pre, input, expect], i) => cases.push({ id: `react-${i}`, cat: 'react', where: 'bells', talk, pre, input, expect: expect.length ? expect : undefined }));
+
+// Phase 2: following a conversation (pronouns, follow-ups, pushing back, memory, typos, several sentences)
+const CONVO: [string, string, string[], string, string[]][] = [
+  ['bells', 'squib', ['tell me about the Treaty Stone'], 'how do I get there?', ['west', 'days', 'samopal', 'road']],
+  ['bells', 'squib', ['tell me about Coltale'], 'and Largo?', ['port', 'river', 'smuggl', 'aimo', 'harbour']],
+  ['bells', 'squib', ['who is Lord Thimbleton?'], 'where does he live?', ['brumandell', 'manor', 'north']],
+  ['bells', 'squib', ['tell me about Queen Elisiah'], 'what do you think of her?', ['queen', 'peace', 'crown', 'suomi', 'alone', 'leaves']],
+  ['bells', 'squib', ['tell me about the Weeping Glacier'], 'is it far?', ['herstal', 'days', 'north', 'road']],
+  ['bells', 'squib', ['tell me about Bellwax'], 'how do you know?', ['inn', 'talk', 'folk', 'say', 'drink']],
+  ['bells', 'squib', ['tell me about the Sunken Ferry'], 'really?', ['say', 'there', 'true', 'rumour', 'sure', 'lie']],
+  ['bells', 'squib', ['tell me about the old chapel'], 'why?', ['bell', 'midnight', 'nobody', 'empty', 'chapel', 'war']],
+  ['bells', 'squib', ['tell me about the cult'], 'since when?', ['weeks', 'spring', 'bell', 'while']],
+  ['bells', 'squib', ['tell me about Grolgar'], 'who told you that?', ['carter', 'ribbons', 'never', 'someone', 'there']],
+  ['bells', 'dwarves', ['tell me about Tantal'], 'what else?', ['mine', 'odessa', 'miner', 'shaft', 'hills']],
+  ['bells', 'dwarves', ['my name is Vera'], 'what is my name?', ['vera']],
+  ['bells', 'dwarves', ['I\'m from Tokarev'], 'where am I from?', ['tokarev']],
+  ['bells', 'squib', ['my name is Vera', 'I\'m a soldier'], 'what do you remember about me?', ['vera', 'soldier']],
+  ['bells', 'squib', [], 'do you remember me?', ['remember', 'face', 'name', 'can\'t']],
+  ['bells', 'squib', ['who runs this town?'], 'who runs this town?', ['already', 'again', 'said']],
+  ['bells', 'squib', [], 'Hi Squib. I\'m Vera. What do you know about the Treaty Stone?', ['vera', 'grolgar', 'elisiah', 'border', 'peace']],
+  ['bells', 'squib', [], 'Hello. Who runs this town? And is it safe on the roads?', ['nobody', 'sergeant', 'dead', 'road', 'safe']],
+  ['bells', 'dwarves', [], 'whats ur name', ['borin', 'odo', 'marrik', 'tokk', 'crew']],
+  ['bells', 'squib', [], 'tell me abt coltail', ['garrison', 'aimo', 'memorial', 'bridge', 'veterans']],
+  ['bells', 'squib', [], 'who is thimbelton?', ['brumandell', 'lord', 'manor']],
+  ['bells', 'dwarves', [], 'wat do u think of the cult', ['candle', 'cult', 'grieving', 'racket', 'bellwax', 'more of them']],
+  ['bells', 'squib', [], 'what do you know about greymarsh?', ['battle', 'war', 'grave', 'not tonight', 'mug']],
+  ['bells', 'squib', ['tell me about Coltale'], 'what about the dwarves?', ['road', 'crew', 'arm', 'east']],
+  ['bells', 'dwarves', ['tell me about Brumandell'], 'who runs it?', ['thimbleton', 'lord', 'manor']],
+  ['bells', 'squib', ['tell me about Hetch'], 'where can I find him?', ['breda', 'tailor', 'here', 'square', 'east']],
+  ['brumandell', 'grog', [], 'tell me about Grog', ['alehouse', 'chowder', 'mine', 'sit', 'rules']],
+  ['suomi', 'innkeeper', ['tell me about Suomi'], 'how do I get there?', ['standing in it']],
+  ['bells', 'squib', ['I\'m Vera'], 'whats my name?', ['vera']],
+  ['coltale', 'innkeeper', ['tell me about the Coltale War Memorial'], 'what happened there?', ['greymarch', 'names', 'dead', 'bell', 'company', 'war']],
+];
+CONVO.forEach(([where, talk, pre, input, expect], i) => cases.push({ id: `convo-${i}`, cat: 'convo', where, talk, pre, input, expect }));
 
 export const CASES = cases;

@@ -9,6 +9,18 @@ Open the link on an Android phone, download it, then tap the file to install. An
 
 You can also open the web link in Chrome and choose **Add to Home screen**.
 
+## What's new in v0.8: people follow the conversation
+
+Phase 2 of the game master upgrade: understanding what you say in the context of what's already been said.
+
+- **Pronouns and follow-ups.** "Who is Lord Thimbleton?" then "where does he live?" and "what do you think of him?" all mean Thimbleton. "And Largo?", "what about the dwarves?", "how do I get there?", "is it far?" and "who runs it?" pick up where you left off.
+- **Push back.** Ask "why?", "how do you know?", "who told you that?", "really?" or "since when?" and they answer about what they just told you, in their own way. An innkeeper heard it at the bar; a rumour is "what they say, I wasn't there".
+- **Say several things at once.** "Hi Squib. I'm Vera. What do you know about the Treaty Stone?" gets a greeting, your name remembered, and the answer.
+- **They remember you.** "What's my name?", "where am I from?", "do you remember me?" and "what do you know about me?" come from what you actually told them.
+- **They notice repeats.** Ask the same thing twice and they'll say so.
+- **Type how you like.** Shorthand ("whats ur name", "wat do u think abt the cult") and misspelt names ("greymarsh", "thimbelton", "coltail") are understood.
+- **Report card:** 30 new multi-turn conversation tests, all passing.
+
 ## What's new in v0.7.1: tablets
 
 - The app now turns with your tablet. In landscape, the battle map sits on the left and the story and controls on the right; the sheet, pack and journal slide in from the side, and the dice tray opens in the middle. Portrait tablets get a wider column, a taller map and slightly larger text.
@@ -127,6 +139,7 @@ npm run build    # production build in dist/
 | `src/content/` | The world: rooms, NPCs, encounters and travel tables for Act One |
 | `src/lore/` | The lore brain: entities, facts, who knows what, and how people answer |
 | `src/mind/` | NPC minds: personas, opinions, memory of what you said, and reactions |
+| `src/understand/` | Understanding: shorthand and typos, several sentences, pronouns, follow-ups and the conversation so far |
 | `src/ui/` | Phone-first interface and the save layer |
 | `tests/` | Unit tests, plus headless playthroughs that finish Act One with 8 different characters |
 

@@ -208,8 +208,12 @@ export function respond(c: Ctx, h: Host, np: Npc, text: string, o: { scripted?: 
   if (/\b(buy|get|stand) you a (drink|pint|round|ale|beer)\b|\b(have|take) a drink (on me|with me)\b|\bdrink with me\b|\bthis one'?s on me\b|\blet me buy you\b/.test(t)) { buyDrink(c, np, x); return true; }
   if (/^(can|could|may) i help( you)?\b|\bdo you need (any )?help\b|\bneed a hand\b|\banything i can do\b|\bcan i do anything for you\b/.test(t)) { offerHelp(c, np, x); return true; }
   if (o.scripted) return false;
+  // asking someone about themselves by name ("tell me about Grog" to Grog)
+  { const self = x.k?.entity; const f = Lore.findEntities(t)[0]; if (self && f?.id === self && /^(tell me about|who is|who's|what about|what do you know about|have you heard of)\b|^[a-z' ]+\??$/.test(t)) { selfAnswer(c, np, x, 'self'); return true; } }
   // 5. questions about them
   for (const [re, key] of SELF) if (re.test(t)) { selfAnswer(c, np, x, key as string); return true; }
+  // who runs a named town
+  { const m = t.match(/^who (?:runs|rules|governs|is in charge of|owns|leads|is the lord of|is lord of)\s+(.+?)\??$/); const e = m ? Lore.findEntities(m[1])[0] : null; if (e && RULER[e.id]) { speak(c, np, x, e.id === hereTown(c) && np.id === 'squib' ? 'Nobody, officially. People say I do. I just pour.' : RULER[e.id]); c.set('lore_focus', e.id); return true; } }
   // 6. questions about here
   for (const [re, key] of PLACE) if (re.test(t)) { if (placeAnswer(c, h, np, x, key, t)) return true; break; }
   // 7. opinions
@@ -241,7 +245,7 @@ function selfAnswer(c: Ctx, np: Npc, x: MC, key: string) {
   const here = townById(hereTown(c) ?? '')?.name;
   const firstName = np.name.replace(/^(Watch-Captain|Master|Mother|Lord|Lady)\s+/, '');
   const A: Record<string, () => string> = {
-    name: () => (isPatterned(np.id) || np.id === 'smith' ? `${np.name}. ${x.mood >= 1 ? 'And you are?' : 'Not that it matters.'}` : `${firstName}. ${x.mood >= 1 ? 'Pleased to meet you.' : 'Everybody knows that.'}`),
+    name: () => (['dwarves', 'whisperers'].includes(np.id) ? p.self : isPatterned(np.id) || np.id === 'smith' ? `${np.name}. ${x.mood >= 1 ? 'And you are?' : 'Not that it matters.'}` : `${firstName}. ${x.mood >= 1 ? 'Pleased to meet you.' : 'Everybody knows that.'}`),
     from: () => (p.from === hereTown(c) ? `Here. Born and bred in ${town}. ${p.years > 20 ? 'Never saw a reason to leave.' : 'Left once. Came back.'}` : `${town}, originally. ${p.years === 1 ? 'A year' : `${p.years} years`} here now${here ? ` in ${here}` : ''}. ${pick(c.rng, ['Still feels like visiting.', 'Long enough to call it home.', 'The cooking\'s better back home. Don\'t tell anyone.'])}`),
     years: () => (p.years >= 100 ? `Longer than you've been alive. Longer than your grandmother, probably.` : `${p.years === 1 ? 'A year' : `${p.years} years`}. ${p.years > 15 ? 'Since before the treaty.' : p.years < 3 ? 'Still learning where the floorboards creak.' : 'Long enough.'}`),
     family: () => p.family,
@@ -714,4 +718,59 @@ export function askRoom(c: Ctx, h: Host, text: string, spawn: (role: string) => 
   ROUND = null;
   if (ent) c.set('lore_focus', ent);
   c.advance(10);
+}
+
+// ---------- Phase 2: what they remember about you, and pushing back on what they said ----------
+export function recallYou(c: Ctx, h: Host, np: Npc, q: 'name' | 'from' | 'trade' | 'remember' | 'told' | 'opinion'): void {
+  const x = ctxOf(c, np);
+  const cl = x.m.claims ?? {};
+  const town = (v?: string) => (v ? townById(v)?.name ?? cap(v) : null);
+  const famous = c.flag('chapel_done') || (c.s.world?.renown ?? 0) >= 8;
+  let line: string;
+  switch (q) {
+    case 'name': line = cl.name ? pick(c.rng, [`${cl.name}. You told me yourself.`, `${cl.name}, isn't it? I don't forget a name.`]) : x.m.met ? 'You never said. I\'ve been calling you "that one" in my head.' : 'No idea. Should I?'; break;
+    case 'from': line = cl.from ? `${town(cl.from)}, you said.${cl.from === x.p.from ? ' Same as me.' : ''}` : 'You never told me where you\'re from.'; break;
+    case 'trade': line = cl.trade ? `You said you're ${/^[aeiou]/.test(cl.trade) ? 'an' : 'a'} ${cl.trade}.${cl.liar ? ' Not that I believe everything you say.' : ''}` : 'You haven\'t said what you do. I could guess.'; break;
+    case 'remember': line = x.m.met ? (cl.name ? `Course I do. ${cl.name}.${cl.from ? ` From ${town(cl.from)}.` : ''}` : 'I remember the face. The name, you never gave me.') : famous ? 'Everybody knows who you are, after what you did.' : 'Can\'t say I do.'; break;
+    default: {
+      const bits: string[] = [];
+      if (cl.name) bits.push(`your name's ${cl.name}`);
+      if (cl.from) bits.push(`you're from ${town(cl.from)}`);
+      if (cl.trade) bits.push(`you're ${/^[aeiou]/.test(cl.trade) ? 'an' : 'a'} ${cl.trade}`);
+      if (cl.fought) bits.push(`you fought ${/^(at|in|with)\b/.test(cl.fought) ? '' : 'at '}${cl.fought}`.replace(/\s+/g, ' '));
+      if (cl.lost) bits.push(`you lost your ${cl.lost}`);
+      if (cl.looking) bits.push(`you're looking for ${cl.looking}`);
+      if (cl.going && cl.going !== '?') bits.push(`you're headed for ${town(cl.going) ?? cl.going}`);
+      line = bits.length ? `Let's see. ${cap(`${bits.slice(0, -1).join(', ')}${bits.length > 1 ? ' and ' : ''}${bits[bits.length - 1]}`)}.${cl.liar ? ' And you lie, sometimes.' : ''}` : 'You haven\'t told me a thing about yourself. Which is its own kind of answer.';
+    }
+  }
+  speak(c, np, x, line, { beat: 0.3, name: false });
+}
+
+const SOURCE: Record<string, string[]> = {
+  innkeeper: ['I keep an inn. People drink, people talk.', 'Half of Lahti has sat at my bar and the other half is on its way.'],
+  merchant: ['Traders talk. I listen.', 'Every cart that stops here brings news with the goods.'],
+  watch: ['It\'s my job to know.', 'Reports. Rumours. Drunks who want to confess.'], soldier: ['Soldiers gossip worse than grandmothers.'],
+  sailor: ['River gossip. Bargemen hear everything.'], courier: ['I carry the news. Sometimes I read it.'], scholar: ['I read. You should try it.'],
+  priest: ['People tell their priest things.'], thief: ['Never you mind how I know.'], farmer: ['A carter told me. They know everything.'],
+};
+export function probeAnswer(c: Ctx, h: Host, np: Npc, kind: 'why' | 'how-know' | 'who-told' | 'really' | 'when' | 'mean', ent: string, lastFact: string | null): boolean {
+  const x = ctxOf(c, np);
+  if (x.k?.avoids?.includes(ent) && x.m.disposition < 3) { nar(c, np, x.k.deflect ?? `${np.name} changes the subject.`); return true; }
+  const lf = lastFact ? Lore.FACT[lastFact] : null;
+  const trade = x.k?.trades.find((tr) => SOURCE[tr]) ?? 'farmer';
+  const g = groupOf(ent);
+  let lead = '';
+  let fact: string | null = null;
+  switch (kind) {
+    case 'why': lead = pick(c.rng, ['Why? ', 'Because of this: ', 'Think about it. ', '']); fact = knownFact(c, np, ent, 'because why reason cause'); if (!fact) lead = pick(c.rng, ['Why? Nobody knows. That\'s the trouble.', 'If I knew why, I\'d be rich. Or dead.', 'Why does anything happen round here? Bad luck and worse people.']); break;
+    case 'how-know': lead = `${pick(c.rng, SOURCE[trade])} `; if (lf?.rumour) lead += 'It\'s what folk say. Make of it what you like. '; else fact = next(c.rng) < 0.5 ? knownFact(c, np, ent) : null; break;
+    case 'who-told': lead = x.p.suspicion >= 1.5 || x.k?.trades.includes('thief') ? 'Never you mind who.' : pick(c.rng, [`A carter from ${townById(pick(c.rng, TOWNS).id)!.name}. Paid for his ale in gossip.`, 'A woman who sells ribbons. She hears everything.', 'Someone who was there. That\'s all you get.']); break;
+    case 'really': lead = lf?.rumour ? pick(c.rng, ['That\'s what they say. I wasn\'t there.', 'So I heard. Rumours are rumours.']) : pick(c.rng, ['As sure as I\'m standing here.', 'Would I lie to you?', 'True as rain.']); if (x.p.humour >= 1 && next(c.rng) < 0.4) lead += ' Your face, though.'; break;
+    case 'when': lead = ['undead', 'cult'].includes(g) || ent === 'bells' ? pick(c.rng, ['A few weeks now. It started with the spring.', 'Since the bell started. Three weeks, near enough.']) : ['war', 'treaty'].includes(g) ? 'Fifteen years back. Feels like yesterday to some.' : pick(c.rng, ['Longer than I\'ve been paying attention.', 'A while. Don\'t ask me to count.']); break;
+    case 'mean': lead = pick(c.rng, ['I mean what I said. ', 'Plainly? ', 'Put it this way: ']); fact = knownFact(c, np, ent); if (!fact) lead += 'Be careful, that\'s what I mean.'; break;
+  }
+  speak(c, np, x, `${lead}${fact ?? ''}`.trim(), { beat: 0.3 });
+  c.set('lore_focus', ent);
+  return true;
 }

@@ -248,6 +248,7 @@ export interface GameState {
   loreKnown?: string[]; // ids of lore facts the player has heard
   rollMode?: 'you' | 'auto'; // who rolls checks: the player (the app asks) or the game. The UI sets it.
   pendingRoll?: PendingRoll | null; // a check waiting for the player's d20
+  talk?: import('../understand').Talk; // the conversation so far: what's being talked about, what was said
   stats: { kills: number; knockouts: number; insults: number };
   props: Record<string, PropState[]>; // props the oracle added, or that changed (broken, taken)
   lastObject: string | null;
