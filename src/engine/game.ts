@@ -1070,7 +1070,7 @@ export function handle(s: GameState, input: string): LogLine[] {
   const raw = input.trim();
   if (s.phase !== 'play' || !s.pc) {
     s.phase = 'create';
-    c.out('title', 'Hams Tavern: The Bells of Lahti');
+    c.out('title', 'Hams Tavern');
     c.sys('Make your character in the Forge to begin.');
     return lines;
   }

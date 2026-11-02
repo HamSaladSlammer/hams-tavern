@@ -1,8 +1,8 @@
 {
   "name": "hams-tavern",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
-  "description": "Hams Tavern: The Bells of Lahti — a solo fantasy RPG with an offline game master.",
+  "description": "Hams Tavern — a solo fantasy RPG with an offline game master.",
   "type": "module",
   "scripts": {
     "dev": "vite",

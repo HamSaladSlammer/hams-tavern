@@ -1,4 +1,4 @@
-# Hams Tavern: The Bells of Lahti
+# Hams Tavern
 
 A solo fantasy RPG with an offline game master. You type what you want to do in plain words — *punch the zombie*, *ask Squib about the barrel*, *kick the vestry door* — and the game master resolves it with fifth-edition rules, dice, and a world that remembers how you treated it. No server, no AI service, no account: it all runs on the device.
 
